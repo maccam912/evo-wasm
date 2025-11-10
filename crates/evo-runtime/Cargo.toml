@@ -1,0 +1,19 @@
+[package]
+name = "evo-runtime"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+evo-core = { path = "../evo-core" }
+evo-ir = { path = "../evo-ir" }
+serde = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+wasmtime = { workspace = true }
+parking_lot = { workspace = true }
+
+[dev-dependencies]
+rand = { workspace = true }
