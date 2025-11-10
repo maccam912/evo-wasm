@@ -76,7 +76,7 @@ jobs:
           labels: ${{ steps.meta-server.outputs.labels }}
           cache-from: type=gha,scope=${{ github.workflow }}-buildx
           cache-to: type=gha,scope=${{ github.workflow }}-buildx,mode=max
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
 
       - name: Extract metadata for worker image
         id: meta-worker
@@ -100,4 +100,4 @@ jobs:
           labels: ${{ steps.meta-worker.outputs.labels }}
           cache-from: type=gha,scope=${{ github.workflow }}-buildx
           cache-to: type=gha,scope=${{ github.workflow }}-buildx,mode=max
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
