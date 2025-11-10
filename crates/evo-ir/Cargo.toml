@@ -19,3 +19,4 @@ wasm-encoder = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
+wabt = { workspace = true }
