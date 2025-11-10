@@ -63,10 +63,9 @@ impl Compiler {
         let mut memories = MemorySection::new();
         memories.memory(MemoryType {
             minimum: 1,
-            maximum: Some(self.config.max_memory_pages),
+            maximum: Some(self.config.max_memory_pages as u64),
             memory64: false,
             shared: false,
-            page_size_log2: None,
         });
         module.section(&memories);
 
@@ -93,13 +92,15 @@ impl Compiler {
     }
 
     fn compile_function(&self, func: &Function) -> Result<wasm_encoder::Function, Error> {
+        use wasm_encoder::Instruction as WI;
+
         let mut wasm_func = wasm_encoder::Function::new(vec![]);
 
         // Add local variables
         if func.num_locals > 0 {
-            wasm_func.instruction(&Instruction::LocalGet(0));
+            wasm_func.instruction(&WI::LocalGet(0));
             for _ in 0..func.num_locals {
-                wasm_func.instruction(&Instruction::I32Const(0));
+                wasm_func.instruction(&WI::I32Const(0));
             }
         }
 

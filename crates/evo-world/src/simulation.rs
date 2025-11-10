@@ -12,6 +12,7 @@ use rand::seq::SliceRandom;
 use rand::Rng;
 use rand_chacha::ChaCha8Rng;
 use rand::SeedableRng;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
@@ -160,7 +161,7 @@ impl Simulation {
         let (_, actions) = match instance.step(0) {
             Ok(result) => result,
             Err(e) => {
-                warn!("Organism {} execution failed: {}", id, e);
+                warn!("Organism {:?} execution failed: {}", id, e);
                 return Ok(());
             }
         };
@@ -231,30 +232,31 @@ impl Simulation {
                 }
             }
 
-            Action::Attack { target_slot, amount } if self.config.dynamic_rules.allow_combat => {
+            Action::Attack { target_slot: _, amount } if self.config.dynamic_rules.allow_combat => {
                 if energy < self.config.energy_config.attack_cost {
                     return Ok(());
                 }
 
                 // Find target in neighboring cells
                 // This is simplified - a full implementation would use target_slot properly
-                if let Some(organism) = self.organisms.get_mut(&id) {
-                    organism.consume_energy(self.config.energy_config.attack_cost);
+                let neighbors = self.grid.neighbors(pos, 1);
+                if let Some((target_pos, _)) = neighbors.first() {
+                    if let Some(&target_id) = self.organism_positions.get(target_pos) {
+                        // First, damage the target
+                        let target_died = if let Some(target) = self.organisms.get_mut(&target_id) {
+                            target.record_damage_received(amount);
+                            target.consume_energy(amount);
+                            target.energy <= 0
+                        } else {
+                            false
+                        };
 
-                    // Find a neighbor to attack
-                    let neighbors = self.grid.neighbors(pos, 1);
-                    if let Some((target_pos, _)) = neighbors.first() {
-                        if let Some(target_id) = self.organism_positions.get(target_pos).copied() {
-                            if let Some(target) = self.organisms.get_mut(&target_id) {
-                                target.record_damage_received(amount);
-                                target.consume_energy(amount);
-
-                                if let Some(attacker) = self.organisms.get_mut(&id) {
-                                    attacker.record_damage_dealt(amount);
-                                    if target.energy <= 0 {
-                                        attacker.record_kill();
-                                    }
-                                }
+                        // Then update attacker
+                        if let Some(attacker) = self.organisms.get_mut(&id) {
+                            attacker.consume_energy(self.config.energy_config.attack_cost);
+                            attacker.record_damage_dealt(amount);
+                            if target_died {
+                                attacker.record_kill();
                             }
                         }
                     }
@@ -306,7 +308,7 @@ impl Simulation {
 
             Action::EmitSignal { channel, value } => {
                 // Signals are recorded but not yet processed
-                debug!("Organism {} emitted signal {} on channel {}", id, value, channel);
+                debug!("Organism {:?} emitted signal {} on channel {}", id, value, channel);
             }
 
             _ => {}
@@ -339,7 +341,7 @@ impl Simulation {
         for id in dead {
             if let Some(organism) = self.organisms.remove(&id) {
                 self.organism_positions.remove(&organism.position);
-                debug!("Organism {} died at age {}", id, organism.age);
+                debug!("Organism {:?} died at age {}", id, organism.age);
             }
         }
     }
@@ -395,7 +397,7 @@ impl Simulation {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SimulationResult {
     pub lineage_stats: HashMap<LineageId, Vec<FitnessMetrics>>,
     pub survivors: Vec<OrganismData>,

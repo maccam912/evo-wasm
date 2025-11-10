@@ -1,0 +1,33 @@
+[package]
+name = "evo-worker"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "evo-worker"
+path = "src/main.rs"
+
+[dependencies]
+evo-core = { path = "../evo-core" }
+evo-ir = { path = "../evo-ir" }
+evo-world = { path = "../evo-world" }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tracing-opentelemetry = { workspace = true }
+
+tokio = { workspace = true }
+reqwest = { workspace = true }
+uuid = { workspace = true }
+futures = "0.3"
+
+opentelemetry = { workspace = true }
+opentelemetry_sdk = { workspace = true }
+opentelemetry-otlp = { workspace = true }
+opentelemetry-semantic-conventions = { workspace = true }
