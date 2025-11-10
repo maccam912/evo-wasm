@@ -63,7 +63,7 @@ async fn main() -> Result<()> {
     let app = Router::new()
         .route("/health", get(api::health))
         .route("/api/jobs/request", post(api::request_job))
-        .route("/api/jobs/submit", post(api::submit_result))
+        .route("/api/jobs/submit", post(|state, json| async move { api::submit_result(state, json).await }))
         .route("/api/stats", get(api::get_stats))
         .route("/api/config", get(api::get_config))
         .layer(CorsLayer::permissive())

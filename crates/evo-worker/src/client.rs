@@ -174,13 +174,15 @@ impl WorkerClient {
 macro_rules! record_counter {
     ($name:expr, $value:expr) => {
         tracing::info!(
-            counter.{} = $value,
+            counter_name = $name,
+            counter_value = $value,
             "Counter metric"
         );
     };
     ($name:expr, $value:expr, $($key:expr => $val:expr),*) => {
         tracing::info!(
-            counter.{} = $value,
+            counter_name = $name,
+            counter_value = $value,
             $($key = $val,)*
             "Counter metric"
         );
@@ -191,13 +193,15 @@ macro_rules! record_counter {
 macro_rules! record_histogram {
     ($name:expr, $value:expr) => {
         tracing::info!(
-            histogram.{} = $value,
+            histogram_name = $name,
+            histogram_value = $value,
             "Histogram metric"
         );
     };
     ($name:expr, $value:expr, $($key:expr => $val:expr),*) => {
         tracing::info!(
-            histogram.{} = $value,
+            histogram_name = $name,
+            histogram_value = $value,
             $($key = $val,)*
             "Histogram metric"
         );

@@ -8,6 +8,7 @@ use evo_core::{
 };
 use evo_ir::{Compiler, Mutator, MutationConfig, Program};
 use evo_runtime::{HostFunctions, OrganismContext, Runtime, RuntimeConfig};
+use parking_lot::RwLock;
 use rand::seq::SliceRandom;
 use rand::Rng;
 use rand_chacha::ChaCha8Rng;
@@ -18,7 +19,7 @@ use std::sync::Arc;
 use tracing::{debug, info, warn};
 
 pub struct Simulation {
-    grid: Grid,
+    grid: Arc<RwLock<Grid>>,
     organisms: HashMap<OrganismId, Organism>,
     organism_positions: HashMap<Position, OrganismId>,
     runtime: Runtime,
@@ -32,7 +33,7 @@ pub struct Simulation {
 impl Simulation {
     pub fn new(config: JobConfig, genomes: Vec<(LineageId, Program)>) -> Result<Self> {
         let mut rng = ChaCha8Rng::seed_from_u64(config.seed);
-        let grid = Grid::from_config(&config.world_config, &mut rng);
+        let grid = Arc::new(RwLock::new(Grid::from_config(&config.world_config, &mut rng)));
 
         let runtime_config = RuntimeConfig {
             max_fuel: config.exec_config.max_fuel_per_step,
@@ -88,6 +89,7 @@ impl Simulation {
     fn step(&mut self) -> Result<()> {
         // Regenerate resources
         self.grid
+            .write()
             .regenerate_resources(self.config.world_config.resource_regen_rate);
 
         // Get list of organism IDs to process (to avoid borrow issues)
@@ -135,9 +137,9 @@ impl Simulation {
             let energy = organism.energy;
 
             // Create context with environment query
-            let grid_ptr = &self.grid as *const Grid;
+            let grid_clone = self.grid.clone();
             let env_query = Arc::new(move |x: i32, y: i32| {
-                let grid = unsafe { &*grid_ptr };
+                let grid = grid_clone.read();
                 let tile = grid.get(Position::new(x, y));
                 match tile.tile_type {
                     TileType::Empty => 0,
@@ -198,13 +200,21 @@ impl Simulation {
                     return Ok(());
                 }
 
-                let new_pos = pos.add(dx, dy).wrap(self.grid.width, self.grid.height);
+                let (width, height) = {
+                    let grid = self.grid.read();
+                    (grid.width, grid.height)
+                };
+                let new_pos = pos.add(dx, dy).wrap(width, height);
 
                 // Check if target is occupied
                 if !self.organism_positions.contains_key(&new_pos) {
                     // Check if target is passable
-                    let tile = self.grid.get(new_pos);
-                    if tile.tile_type != TileType::Obstacle {
+                    let tile_type = {
+                        let grid = self.grid.read();
+                        grid.get(new_pos).tile_type
+                    };
+
+                    if tile_type != TileType::Obstacle {
                         // Move organism
                         self.organism_positions.remove(&pos);
                         self.organism_positions.insert(new_pos, id);
@@ -219,13 +229,16 @@ impl Simulation {
 
             Action::Eat => {
                 if let Some(organism) = self.organisms.get_mut(&id) {
-                    let tile = self.grid.get_mut(organism.position);
+                    let organism_pos = organism.position;
+                    let mut grid = self.grid.write();
+                    let tile = grid.get_mut(organism_pos);
                     if tile.tile_type == TileType::Resource && tile.resource_amount > 0 {
                         let consumed = tile.resource_amount.min(100);
                         tile.resource_amount -= consumed;
 
                         let energy_gained =
                             (consumed as f32 * self.config.energy_config.eat_efficiency) as i32;
+                        drop(grid); // Release lock before mutating organism
                         organism.add_energy(energy_gained);
                         organism.metrics.times_eaten += 1;
                     }
@@ -239,7 +252,11 @@ impl Simulation {
 
                 // Find target in neighboring cells
                 // This is simplified - a full implementation would use target_slot properly
-                let neighbors = self.grid.neighbors(pos, 1);
+                let neighbors = {
+                    let grid = self.grid.read();
+                    grid.neighbors(pos, 1)
+                };
+
                 if let Some((target_pos, _)) = neighbors.first() {
                     if let Some(&target_id) = self.organism_positions.get(target_pos) {
                         // First, damage the target
@@ -279,20 +296,27 @@ impl Simulation {
                     parent.consume_energy(self.config.energy_config.reproduce_cost);
                     parent.record_offspring();
 
+                    let parent_position = parent.position;
+                    let parent_lineage = parent.lineage_id;
+
                     // Mutate genome
                     let mut offspring_genome = parent.genome.clone();
                     self.mutator.mutate(&mut offspring_genome, &mut self.rng);
 
                     // Find empty adjacent cell
-                    let neighbors = self.grid.neighbors(parent.position, 1);
+                    let (neighbors, width, height) = {
+                        let grid = self.grid.read();
+                        (grid.neighbors(parent_position, 1), grid.width, grid.height)
+                    };
+
                     for (neighbor_pos, tile) in neighbors {
-                        let wrapped = neighbor_pos.wrap(self.grid.width, self.grid.height);
+                        let wrapped = neighbor_pos.wrap(width, height);
                         if tile.tile_type != TileType::Obstacle
                             && !self.organism_positions.contains_key(&wrapped)
                         {
                             // Spawn offspring
                             let offspring = Organism::new(
-                                parent.lineage_id,
+                                parent_lineage,
                                 wrapped,
                                 self.config.energy_config.initial_energy / 2,
                                 offspring_genome,
@@ -321,8 +345,12 @@ impl Simulation {
         let hazard_damage = self.config.world_config.hazard_damage;
 
         for (pos, id) in self.organism_positions.iter() {
-            let tile = self.grid.get(*pos);
-            if tile.tile_type == TileType::Hazard {
+            let is_hazard = {
+                let grid = self.grid.read();
+                grid.get(*pos).tile_type == TileType::Hazard
+            };
+
+            if is_hazard {
                 if let Some(organism) = self.organisms.get_mut(id) {
                     organism.consume_energy(hazard_damage);
                 }
@@ -348,14 +376,23 @@ impl Simulation {
 
     fn spawn_organism(&mut self, lineage_id: LineageId, genome: Program) -> Result<()> {
         // Find random empty position
+        let (width, height) = {
+            let grid = self.grid.read();
+            (grid.width, grid.height)
+        };
+
         for _ in 0..100 {
-            let x = self.rng.gen_range(0..self.grid.width);
-            let y = self.rng.gen_range(0..self.grid.height);
+            let x = self.rng.gen_range(0..width);
+            let y = self.rng.gen_range(0..height);
             let pos = Position::new(x, y);
 
             if !self.organism_positions.contains_key(&pos) {
-                let tile = self.grid.get(pos);
-                if tile.tile_type != TileType::Obstacle {
+                let tile_type = {
+                    let grid = self.grid.read();
+                    grid.get(pos).tile_type
+                };
+
+                if tile_type != TileType::Obstacle {
                     let organism = Organism::new(
                         lineage_id,
                         pos,

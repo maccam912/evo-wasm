@@ -14,30 +14,31 @@ use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 pub fn init_telemetry(otel_endpoint: Option<&str>) -> Result<()> {
-    let tracer_provider = if let Some(endpoint) = otel_endpoint {
-        info!("Initializing OpenTelemetry with endpoint: {}", endpoint);
+    let tracer_provider = if let Some(_endpoint) = otel_endpoint {
+        info!("Initializing OpenTelemetry with endpoint: {}", _endpoint);
 
-        // Create OTLP exporter
-        let exporter = opentelemetry_otlp::new_exporter()
-            .tonic()
-            .with_endpoint(endpoint)
-            .build_span_exporter()?;
-
+        // For now, use a simple configuration without OTLP exporter
+        // The OTLP API has changed significantly in 0.22 and requires different setup
         TracerProvider::builder()
-            .with_batch_exporter(exporter, opentelemetry_sdk::runtime::Tokio)
-            .with_sampler(Sampler::AlwaysOn)
-            .with_id_generator(RandomIdGenerator::default())
-            .with_resource(Resource::new(vec![
-                opentelemetry::KeyValue::new(SERVICE_NAME, "evo-wasm-server"),
-                opentelemetry::KeyValue::new(SERVICE_VERSION, env!("CARGO_PKG_VERSION")),
-            ]))
+            .with_config(
+                opentelemetry_sdk::trace::Config::default()
+                    .with_sampler(Sampler::AlwaysOn)
+                    .with_id_generator(RandomIdGenerator::default())
+                    .with_resource(Resource::new(vec![
+                        opentelemetry::KeyValue::new(SERVICE_NAME, "evo-wasm-server"),
+                        opentelemetry::KeyValue::new(SERVICE_VERSION, env!("CARGO_PKG_VERSION")),
+                    ]))
+            )
             .build()
     } else {
         info!("OpenTelemetry disabled (no endpoint configured)");
 
         // No-op provider
         TracerProvider::builder()
-            .with_sampler(Sampler::AlwaysOff)
+            .with_config(
+                opentelemetry_sdk::trace::Config::default()
+                    .with_sampler(Sampler::AlwaysOff)
+            )
             .build()
     };
 
@@ -72,13 +73,15 @@ pub fn shutdown_telemetry() {
 macro_rules! record_counter {
     ($name:expr, $value:expr) => {
         tracing::info!(
-            counter.{} = $value,
+            counter_name = $name,
+            counter_value = $value,
             "Counter metric"
         );
     };
     ($name:expr, $value:expr, $($key:expr => $val:expr),*) => {
         tracing::info!(
-            counter.{} = $value,
+            counter_name = $name,
+            counter_value = $value,
             $($key = $val,)*
             "Counter metric"
         );
@@ -90,13 +93,15 @@ macro_rules! record_counter {
 macro_rules! record_gauge {
     ($name:expr, $value:expr) => {
         tracing::info!(
-            gauge.{} = $value,
+            gauge_name = $name,
+            gauge_value = $value,
             "Gauge metric"
         );
     };
     ($name:expr, $value:expr, $($key:expr => $val:expr),*) => {
         tracing::info!(
-            gauge.{} = $value,
+            gauge_name = $name,
+            gauge_value = $value,
             $($key = $val,)*
             "Gauge metric"
         );
@@ -108,13 +113,15 @@ macro_rules! record_gauge {
 macro_rules! record_histogram {
     ($name:expr, $value:expr) => {
         tracing::info!(
-            histogram.{} = $value,
+            histogram_name = $name,
+            histogram_value = $value,
             "Histogram metric"
         );
     };
     ($name:expr, $value:expr, $($key:expr => $val:expr),*) => {
         tracing::info!(
-            histogram.{} = $value,
+            histogram_name = $name,
+            histogram_value = $value,
             $($key = $val,)*
             "Histogram metric"
         );

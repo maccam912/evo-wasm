@@ -10,4 +10,4 @@ pub mod island;
 pub use grid::Grid;
 pub use organism::Organism;
 pub use simulation::Simulation;
-pub use island::Island;
+pub use island::{IslandJob, IslandResult};

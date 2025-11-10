@@ -52,17 +52,27 @@ pub async fn request_job(
     Ok(Json(job))
 }
 
+#[derive(Serialize)]
+pub struct SubmitResponse {
+    success: bool,
+}
+
 /// Submit job results
 pub async fn submit_result(
     State(state): State<AppState>,
-    Json(result): Json<IslandResult>,
-) -> Result<StatusCode, ApiError> {
-    info!("Job result submitted: {:?}", result.job_id);
+    Json(job_result): Json<IslandResult>,
+) -> Response {
+    info!("Job result submitted: {:?}", job_result.job_id);
 
-    state.job_manager.mark_job_complete(result.job_id).await;
-    state.evolution.process_result(result).await?;
+    state.job_manager.mark_job_complete(job_result.job_id).await;
 
-    Ok(StatusCode::OK)
+    match state.evolution.process_result(job_result).await {
+        Ok(_) => (StatusCode::OK, Json(SubmitResponse { success: true })).into_response(),
+        Err(e) => {
+            error!("Failed to process result: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to process result: {}", e)).into_response()
+        }
+    }
 }
 
 #[derive(Serialize)]

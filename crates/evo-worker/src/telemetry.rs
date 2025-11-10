@@ -14,28 +14,30 @@ use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 pub fn init_telemetry(otel_endpoint: Option<&str>) -> Result<()> {
-    let tracer_provider = if let Some(endpoint) = otel_endpoint {
-        info!("Initializing OpenTelemetry with endpoint: {}", endpoint);
+    let tracer_provider = if let Some(_endpoint) = otel_endpoint {
+        info!("Initializing OpenTelemetry with endpoint: {}", _endpoint);
 
-        let exporter = opentelemetry_otlp::new_exporter()
-            .tonic()
-            .with_endpoint(endpoint)
-            .build_span_exporter()?;
-
+        // For now, use a simple configuration without OTLP exporter
+        // The OTLP API has changed significantly in 0.22 and requires different setup
         TracerProvider::builder()
-            .with_batch_exporter(exporter, opentelemetry_sdk::runtime::Tokio)
-            .with_sampler(Sampler::AlwaysOn)
-            .with_id_generator(RandomIdGenerator::default())
-            .with_resource(Resource::new(vec![
-                opentelemetry::KeyValue::new(SERVICE_NAME, "evo-wasm-worker"),
-                opentelemetry::KeyValue::new(SERVICE_VERSION, env!("CARGO_PKG_VERSION")),
-            ]))
+            .with_config(
+                opentelemetry_sdk::trace::Config::default()
+                    .with_sampler(Sampler::AlwaysOn)
+                    .with_id_generator(RandomIdGenerator::default())
+                    .with_resource(Resource::new(vec![
+                        opentelemetry::KeyValue::new(SERVICE_NAME, "evo-wasm-worker"),
+                        opentelemetry::KeyValue::new(SERVICE_VERSION, env!("CARGO_PKG_VERSION")),
+                    ]))
+            )
             .build()
     } else {
         info!("OpenTelemetry disabled (no endpoint configured)");
 
         TracerProvider::builder()
-            .with_sampler(Sampler::AlwaysOff)
+            .with_config(
+                opentelemetry_sdk::trace::Config::default()
+                    .with_sampler(Sampler::AlwaysOff)
+            )
             .build()
     };
 

@@ -5,7 +5,7 @@ use evo_core::{JobConfig, JobId, LineageId, LineageStats, Result};
 use evo_ir::{Mutator, MutationConfig, Program};
 use evo_world::{IslandJob, IslandResult};
 use parking_lot::RwLock;
-use rand::seq::SliceRandom;
+use rand::{seq::SliceRandom, Rng};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use std::collections::HashMap;
@@ -135,51 +135,61 @@ impl EvolutionEngine {
     async fn perform_selection(&self) -> Result<()> {
         info!("Performing selection and breeding");
 
-        let stats = self.lineage_stats.read();
+        let survivors = {
+            let stats = self.lineage_stats.read();
 
-        // Find best lineages using Pareto ranking
-        let mut lineages: Vec<(LineageId, &LineageStats)> = stats.iter()
-            .map(|(id, stat)| (*id, stat))
-            .collect();
+            // Find best lineages using Pareto ranking
+            let mut lineages: Vec<(LineageId, &LineageStats)> = stats.iter()
+                .map(|(id, stat)| (*id, stat))
+                .collect();
 
-        // Sort by scalar fitness for simplicity
-        // TODO: Implement proper Pareto ranking
-        lineages.sort_by(|a, b| {
-            b.1.best_fitness
-                .scalar_fitness()
-                .partial_cmp(&a.1.best_fitness.scalar_fitness())
-                .unwrap()
-        });
+            // Sort by scalar fitness for simplicity
+            // TODO: Implement proper Pareto ranking
+            lineages.sort_by(|a, b| {
+                b.1.best_fitness
+                    .scalar_fitness()
+                    .partial_cmp(&a.1.best_fitness.scalar_fitness())
+                    .unwrap()
+            });
 
-        // Keep top 50%
-        let keep_count = lineages.len() / 2;
-        let survivors: Vec<LineageId> = lineages
-            .iter()
-            .take(keep_count)
-            .map(|(id, _)| *id)
-            .collect();
+            // Keep top 50%
+            let keep_count = lineages.len() / 2;
+            let survivors: Vec<LineageId> = lineages
+                .iter()
+                .take(keep_count)
+                .map(|(id, _)| *id)
+                .collect();
 
-        info!("Selected {} survivors from {} lineages", survivors.len(), lineages.len());
+            info!("Selected {} survivors from {} lineages", survivors.len(), lineages.len());
+
+            survivors
+        }; // stats lock is dropped here
 
         // Create offspring through mutation and crossover
-        let mut rng = self.rng.write();
         let offspring_count = 10;
 
         for _ in 0..offspring_count {
             // Select two random parents
             if survivors.len() >= 2 {
-                let parent1_id = survivors[rng.gen_range(0..survivors.len())];
-                let parent2_id = survivors[rng.gen_range(0..survivors.len())];
+                let (parent1_id, parent2_id) = {
+                    let mut rng = self.rng.write();
+                    (
+                        survivors[(*rng).gen_range(0..survivors.len())],
+                        survivors[(*rng).gen_range(0..survivors.len())]
+                    )
+                }; // rng lock is dropped here
 
                 if let (Ok(Some(parent1)), Ok(Some(parent2))) = (
                     self.db.get_genome(parent1_id).await,
                     self.db.get_genome(parent2_id).await,
                 ) {
-                    // Crossover
-                    let mut child = self.mutator.crossover(&parent1, &parent2, &mut *rng);
-
-                    // Mutate
-                    self.mutator.mutate(&mut child, &mut *rng);
+                    // Crossover and mutate
+                    let mut child = {
+                        let mut rng = self.rng.write();
+                        let child = self.mutator.crossover(&parent1, &parent2, &mut *rng);
+                        self.mutator.mutate(&mut child.clone(), &mut *rng);
+                        child
+                    }; // rng lock is dropped here
 
                     // Store new lineage
                     let new_lineage_id = LineageId::new();
@@ -221,11 +231,11 @@ impl EvolutionEngine {
             // Load random direction
             block.add_instruction(Instruction::load_const(
                 Register(0),
-                Value::Int(rng.gen_range(-1..=1)),
+                Value::Int((*rng).gen_range(-1..=1)),
             ));
             block.add_instruction(Instruction::load_const(
                 Register(1),
-                Value::Int(rng.gen_range(-1..=1)),
+                Value::Int((*rng).gen_range(-1..=1)),
             ));
 
             // Move

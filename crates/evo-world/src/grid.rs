@@ -79,8 +79,8 @@ impl Grid {
         }
     }
 
-    /// Get neighbors of a position
-    pub fn neighbors(&self, pos: Position, radius: i32) -> Vec<(Position, &Tile)> {
+    /// Get neighbors of a position (returns cloned tiles to avoid lifetime issues)
+    pub fn neighbors(&self, pos: Position, radius: i32) -> Vec<(Position, Tile)> {
         let mut neighbors = Vec::new();
 
         for dy in -radius..=radius {
@@ -90,7 +90,7 @@ impl Grid {
                 }
 
                 let neighbor_pos = pos.add(dx, dy);
-                neighbors.push((neighbor_pos, self.get(neighbor_pos)));
+                neighbors.push((neighbor_pos, self.get(neighbor_pos).clone()));
             }
         }
 
