@@ -1,0 +1,42 @@
+[package]
+name = "evo-server"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "evo-server"
+path = "src/main.rs"
+
+[dependencies]
+evo-core = { path = "../evo-core" }
+evo-ir = { path = "../evo-ir" }
+evo-world = { path = "../evo-world" }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tracing-opentelemetry = { workspace = true }
+
+tokio = { workspace = true }
+axum = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+
+sqlx = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+dashmap = { workspace = true }
+parking_lot = { workspace = true }
+rand = { workspace = true }
+rand_chacha = { workspace = true }
+bincode = { workspace = true }
+
+opentelemetry = { workspace = true }
+opentelemetry_sdk = { workspace = true }
+opentelemetry-otlp = { workspace = true }
+opentelemetry-semantic-conventions = { workspace = true }
