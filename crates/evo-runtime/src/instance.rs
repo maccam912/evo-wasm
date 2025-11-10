@@ -168,6 +168,9 @@ mod tests {
         let host_functions = HostFunctions::new(context);
         let instance = runtime.instantiate(&wasm_bytes, host_functions);
 
+        if let Err(e) = &instance {
+            eprintln!("Error creating instance: {:?}", e);
+        }
         assert!(instance.is_ok());
     }
 

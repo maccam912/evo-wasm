@@ -94,15 +94,12 @@ impl Compiler {
     fn compile_function(&self, func: &Function) -> Result<wasm_encoder::Function, Error> {
         use wasm_encoder::Instruction as WI;
 
-        let mut wasm_func = wasm_encoder::Function::new(vec![]);
-
-        // Add local variables
+        // Declare local variables properly
+        let mut locals = vec![];
         if func.num_locals > 0 {
-            wasm_func.instruction(&WI::LocalGet(0));
-            for _ in 0..func.num_locals {
-                wasm_func.instruction(&WI::I32Const(0));
-            }
+            locals.push((func.num_locals as u32, ValType::I32));
         }
+        let mut wasm_func = wasm_encoder::Function::new(locals);
 
         // Compile each basic block
         for (block_idx, block) in func.blocks.iter().enumerate() {
@@ -116,6 +113,9 @@ impl Compiler {
                 self.compile_instruction(&mut wasm_func, inst)?;
             }
         }
+
+        // Add END instruction to close the function body
+        wasm_func.instruction(&WI::End);
 
         Ok(wasm_func)
     }
@@ -415,5 +415,42 @@ mod tests {
 
         let wasm_bytes = compiler.compile(&program);
         assert!(wasm_bytes.is_ok());
+    }
+
+    #[test]
+    fn test_compile_init_and_step() {
+        let compiler = Compiler::new(CompilerConfig::default());
+
+        let mut program = Program::new();
+
+        // Init function
+        let mut init = Function::new("init".to_string(), 1, ReturnType::Void);
+        init.get_block_mut(0).unwrap().add_instruction(
+            Instruction::return_void()
+        );
+        program.add_function(init);
+
+        // Step function
+        let mut step = Function::new("step".to_string(), 1, ReturnType::Int);
+        step.get_block_mut(0).unwrap().add_instruction(
+            Instruction::load_const(Register(0), Value::Int(0))
+        );
+        step.get_block_mut(0).unwrap().add_instruction(
+            Instruction::return_value(Register(0))
+        );
+        program.add_function(step);
+
+        let wasm_bytes = compiler.compile(&program);
+        assert!(wasm_bytes.is_ok(), "Compilation failed: {:?}", wasm_bytes.err());
+
+        let bytes = wasm_bytes.unwrap();
+
+        // Try to disassemble with wabt to validate
+        match wabt::wasm2wat(&bytes) {
+            Ok(wat) => {
+                println!("Generated WAT:\n{}", wat);
+            },
+            Err(e) => panic!("WASM validation/disassembly failed: {:?}", e),
+        }
     }
 }
