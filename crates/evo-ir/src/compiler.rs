@@ -231,6 +231,77 @@ impl Compiler {
                     wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
                 }
             }
+            Opcode::Not => {
+                self.load_operands(wasm_func, &inst.operands)?;
+                // Logical NOT: x == 0 ? 1 : 0
+                wasm_func.instruction(&WI::I32Eqz);
+                if let Some(dest) = inst.dest {
+                    wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
+                }
+            }
+
+            // Unary arithmetic operations
+            Opcode::Neg => {
+                // Negate: 0 - x
+                wasm_func.instruction(&WI::I32Const(0));
+                self.load_operands(wasm_func, &inst.operands)?;
+                wasm_func.instruction(&WI::I32Sub);
+                if let Some(dest) = inst.dest {
+                    wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
+                }
+            }
+            Opcode::Abs => {
+                self.load_operands(wasm_func, &inst.operands)?;
+                // Absolute value using local variable
+                let temp_local = 0; // Use first local as temp
+                wasm_func.instruction(&WI::LocalTee(temp_local));
+                wasm_func.instruction(&WI::I32Const(31));
+                wasm_func.instruction(&WI::I32ShrS); // Sign bit
+                wasm_func.instruction(&WI::LocalGet(temp_local));
+                wasm_func.instruction(&WI::I32Xor);
+                wasm_func.instruction(&WI::LocalGet(temp_local));
+                wasm_func.instruction(&WI::I32Const(31));
+                wasm_func.instruction(&WI::I32ShrS);
+                wasm_func.instruction(&WI::I32Sub);
+                if let Some(dest) = inst.dest {
+                    wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
+                }
+            }
+            Opcode::Min => {
+                self.load_operands(wasm_func, &inst.operands)?;
+                // Min: a < b ? a : b
+                // Stack: a b
+                let temp_a = 0;
+                let temp_b = 1;
+                wasm_func.instruction(&WI::LocalSet(temp_b));
+                wasm_func.instruction(&WI::LocalSet(temp_a));
+                wasm_func.instruction(&WI::LocalGet(temp_a));
+                wasm_func.instruction(&WI::LocalGet(temp_b));
+                wasm_func.instruction(&WI::LocalGet(temp_a));
+                wasm_func.instruction(&WI::LocalGet(temp_b));
+                wasm_func.instruction(&WI::I32LtS);
+                wasm_func.instruction(&WI::Select);
+                if let Some(dest) = inst.dest {
+                    wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
+                }
+            }
+            Opcode::Max => {
+                self.load_operands(wasm_func, &inst.operands)?;
+                // Max: a > b ? a : b
+                let temp_a = 0;
+                let temp_b = 1;
+                wasm_func.instruction(&WI::LocalSet(temp_b));
+                wasm_func.instruction(&WI::LocalSet(temp_a));
+                wasm_func.instruction(&WI::LocalGet(temp_a));
+                wasm_func.instruction(&WI::LocalGet(temp_b));
+                wasm_func.instruction(&WI::LocalGet(temp_a));
+                wasm_func.instruction(&WI::LocalGet(temp_b));
+                wasm_func.instruction(&WI::I32GtS);
+                wasm_func.instruction(&WI::Select);
+                if let Some(dest) = inst.dest {
+                    wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
+                }
+            }
 
             // Load constant
             Opcode::LoadConst => {
@@ -283,10 +354,38 @@ impl Compiler {
                     wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
                 }
             }
+            Opcode::SenseNeighbor => {
+                self.load_operands(wasm_func, &inst.operands)?;
+                wasm_func.instruction(&WI::Call(self.get_import_index("sense_neighbor")));
+                if let Some(dest) = inst.dest {
+                    wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
+                }
+            }
+            Opcode::Attack => {
+                self.load_operands(wasm_func, &inst.operands)?;
+                wasm_func.instruction(&WI::Call(self.get_import_index("attack")));
+                if let Some(dest) = inst.dest {
+                    wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
+                }
+            }
+            Opcode::Reproduce => {
+                wasm_func.instruction(&WI::Call(self.get_import_index("try_reproduce")));
+                if let Some(dest) = inst.dest {
+                    wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
+                }
+            }
+            Opcode::EmitSignal => {
+                self.load_operands(wasm_func, &inst.operands)?;
+                wasm_func.instruction(&WI::Call(self.get_import_index("emit_signal")));
+                // emit_signal returns void, no destination
+            }
 
-            _ => {
-                // Placeholder for other operations
-                tracing::warn!("Opcode {:?} not yet implemented in compiler", inst.opcode);
+            // Control flow and memory operations
+            Opcode::Branch | Opcode::BranchIf | Opcode::Call | Opcode::Load | Opcode::Store => {
+                // These require more complex control flow structures not yet implemented
+                // For now, generate a NOP (no operation) to keep WASM valid
+                // These opcodes are not generated by the current mutator anyway
+                tracing::warn!("Opcode {:?} requires control flow not yet implemented", inst.opcode);
             }
         }
 
