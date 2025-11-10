@@ -1,4 +1,4 @@
-name: Build and Push Docker Images
+name: Build and Push Server Image
 
 on:
   push:
@@ -16,7 +16,7 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build-test-and-push:
+  build-server:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -25,23 +25,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Cache cargo directories
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Run tests
-        run: cargo test --locked
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -74,30 +57,6 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta-server.outputs.tags }}
           labels: ${{ steps.meta-server.outputs.labels }}
-          cache-from: type=gha,scope=${{ github.workflow }}-buildx
-          cache-to: type=gha,scope=${{ github.workflow }}-buildx,mode=max
-          platforms: linux/amd64
-
-      - name: Extract metadata for worker image
-        id: meta-worker
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/evo-wasm-worker
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable={{is_default_branch}}
-
-      - name: Build and push worker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: Dockerfile.worker
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta-worker.outputs.tags }}
-          labels: ${{ steps.meta-worker.outputs.labels }}
           cache-from: type=gha,scope=${{ github.workflow }}-buildx
           cache-to: type=gha,scope=${{ github.workflow }}-buildx,mode=max
           platforms: linux/amd64
