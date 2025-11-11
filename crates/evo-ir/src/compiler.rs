@@ -95,9 +95,12 @@ impl Compiler {
         use wasm_encoder::Instruction as WI;
 
         // Declare local variables properly
+        // Ensure we have at least 2 temp locals for complex operations like Min/Max
+        let min_locals = 2;
+        let num_locals = func.num_locals.max(min_locals);
         let mut locals = vec![];
-        if func.num_locals > 0 {
-            locals.push((func.num_locals as u32, ValType::I32));
+        if num_locals > 0 {
+            locals.push((num_locals as u32, ValType::I32));
         }
         let mut wasm_func = wasm_encoder::Function::new(locals);
 

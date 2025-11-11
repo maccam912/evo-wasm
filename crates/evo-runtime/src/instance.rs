@@ -23,7 +23,18 @@ impl OrganismInstance {
         config: RuntimeConfig,
     ) -> Result<Self> {
         let module = Module::new(engine, wasm_bytes)
-            .map_err(|e| Error::Wasm(format!("Failed to compile module: {}", e)))?;
+            .map_err(|e| {
+                tracing::error!("WASM compilation failed. Error details: {:?}", e);
+                tracing::error!("WASM bytecode length: {} bytes", wasm_bytes.len());
+                tracing::error!("Wasmtime error (Display): {}", e);
+                // Save WASM to file for debugging
+                if let Err(io_err) = std::fs::write("/tmp/failed_wasm.wasm", wasm_bytes) {
+                    tracing::warn!("Failed to save WASM bytecode: {}", io_err);
+                } else {
+                    tracing::info!("Saved failing WASM bytecode to /tmp/failed_wasm.wasm");
+                }
+                Error::Wasm(format!("Failed to compile module: {}", e))
+            })?;
 
         let mut linker = Linker::new(engine);
         host_functions
