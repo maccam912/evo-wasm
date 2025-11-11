@@ -87,7 +87,7 @@ impl Simulation {
     }
 
     /// Execute one simulation step
-    // #[instrument(skip(self), fields(tick = self.tick))]
+    #[instrument(skip(self), fields(tick = self.tick))]
     fn step(&mut self) -> Result<()> {
         // Regenerate resources
         self.grid
