@@ -52,11 +52,11 @@ pub fn init_telemetry(otel_endpoint: Option<&str>) -> Result<()> {
             .with_batch_exporter(trace_exporter, Tokio)
             .build();
 
-        // Create tracer from the provider
-        let tracer = tracer_provider.tracer("evo-wasm-worker");
-
-        // Set the global tracer provider
+        // Set the global tracer provider FIRST
         global::set_tracer_provider(tracer_provider);
+
+        // Then get tracer from the global provider
+        let tracer = global::tracer("evo-wasm-worker");
 
         // ==================== LOGS ====================
         // Configure log exporter and provider
