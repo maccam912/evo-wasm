@@ -11,7 +11,7 @@ use evo_core::JobConfig;
 use evo_world::IslandResult;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tracing::{error, info};
+use tracing::{error, info, instrument};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -28,6 +28,7 @@ pub struct HealthResponse {
 }
 
 /// Health check endpoint
+#[instrument]
 pub async fn health() -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "healthy".to_string(),
@@ -35,12 +36,13 @@ pub async fn health() -> Json<HealthResponse> {
     })
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct JobRequest {
     worker_id: Option<String>,
 }
 
 /// Request a new job
+#[instrument(skip(state))]
 pub async fn request_job(
     State(state): State<AppState>,
     Json(req): Json<JobRequest>,
@@ -58,6 +60,7 @@ pub struct SubmitResponse {
 }
 
 /// Submit job results
+#[instrument(skip(state, job_result), fields(job_id = ?job_result.job_id))]
 pub async fn submit_result(
     State(state): State<AppState>,
     Json(job_result): Json<IslandResult>,
@@ -84,6 +87,7 @@ pub struct StatsResponse {
 }
 
 /// Get server statistics
+#[instrument(skip(state))]
 pub async fn get_stats(State(state): State<AppState>) -> Result<Json<StatsResponse>, ApiError> {
     let stats = state.job_manager.get_stats().await;
     let total_lineages = state.db.count_lineages().await?;
@@ -97,6 +101,7 @@ pub async fn get_stats(State(state): State<AppState>) -> Result<Json<StatsRespon
 }
 
 /// Get current job configuration
+#[instrument(skip(state))]
 pub async fn get_config(State(state): State<AppState>) -> Json<JobConfig> {
     Json(state.evolution.get_config().await)
 }

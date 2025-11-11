@@ -7,6 +7,8 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use tracing::{debug, info, instrument, warn};
+use opentelemetry::global;
+use std::collections::HashMap;
 
 pub struct WorkerClient {
     config: WorkerConfig,
@@ -41,6 +43,20 @@ impl WorkerClient {
         &self.config
     }
 
+    /// Inject trace context into HTTP headers
+    fn inject_trace_context(&self) -> HashMap<String, String> {
+        use tracing_opentelemetry::OpenTelemetrySpanExt;
+
+        let mut headers = HashMap::new();
+        let context = tracing::Span::current().context();
+
+        global::get_text_map_propagator(|propagator| {
+            propagator.inject_context(&context, &mut headers);
+        });
+
+        headers
+    }
+
     /// Request a job from the server
     #[instrument(skip(self))]
     pub async fn request_job(&self) -> Result<Option<IslandJob>> {
@@ -48,14 +64,21 @@ impl WorkerClient {
 
         debug!("Requesting job from {}", url);
 
-        let response = self
+        // Inject trace context
+        let trace_headers = self.inject_trace_context();
+        let mut request = self
             .http_client
             .post(&url)
             .json(&JobRequest {
                 worker_id: Some(self.worker_id.clone()),
-            })
-            .send()
-            .await?;
+            });
+
+        // Add trace context headers
+        for (key, value) in trace_headers {
+            request = request.header(key, value);
+        }
+
+        let response = request.send().await?;
 
         if response.status().is_success() {
             let job: IslandJob = response.json().await?;
@@ -80,12 +103,19 @@ impl WorkerClient {
 
         debug!("Submitting result for job: {:?}", result.job_id);
 
-        let response = self
+        // Inject trace context
+        let trace_headers = self.inject_trace_context();
+        let mut request = self
             .http_client
             .post(&url)
-            .json(&result)
-            .send()
-            .await?;
+            .json(&result);
+
+        // Add trace context headers
+        for (key, value) in trace_headers {
+            request = request.header(key, value);
+        }
+
+        let response = request.send().await?;
 
         if response.status().is_success() {
             info!("Result submitted successfully for job: {:?}", result.job_id);
@@ -149,12 +179,22 @@ impl WorkerClient {
     }
 
     /// Get current dynamic rules from the server
+    #[instrument(skip(self))]
     pub async fn get_config(&self) -> Result<evo_core::JobConfig> {
         let url = format!("{}/api/config", self.config.server_url);
 
         debug!("Fetching config from {}", url);
 
-        let response = self.http_client.get(&url).send().await?;
+        // Inject trace context
+        let trace_headers = self.inject_trace_context();
+        let mut request = self.http_client.get(&url);
+
+        // Add trace context headers
+        for (key, value) in trace_headers {
+            request = request.header(key, value);
+        }
+
+        let response = request.send().await?;
 
         if response.status().is_success() {
             let config: evo_core::JobConfig = response.json().await?;

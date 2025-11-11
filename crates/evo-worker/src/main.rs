@@ -8,7 +8,7 @@ use evo_core::WorkerConfig;
 use std::sync::Arc;
 use tokio::signal;
 use tokio::time::{interval, Duration};
-use tracing::{error, info};
+use tracing::{error, info, instrument};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -62,6 +62,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+#[instrument(skip(client))]
 async fn run_worker_loop(client: Arc<client::WorkerClient>, task_id: usize) -> Result<()> {
     let poll_interval = client.config().poll_interval_ms;
     let mut interval = interval(Duration::from_millis(poll_interval));
@@ -85,6 +86,7 @@ async fn run_worker_loop(client: Arc<client::WorkerClient>, task_id: usize) -> R
     }
 }
 
+#[instrument]
 async fn shutdown_signal() {
     let ctrl_c = async {
         signal::ctrl_c()

@@ -5,6 +5,7 @@ use crate::host_functions::HostFunctions;
 use crate::RuntimeConfig;
 use evo_core::{Error, Result};
 use wasmtime::*;
+use tracing::instrument;
 
 /// A running organism instance
 pub struct OrganismInstance {
@@ -69,6 +70,7 @@ impl OrganismInstance {
     }
 
     /// Initialize the organism with a seed
+    #[instrument(skip(self))]
     pub fn init(&mut self, seed: u64) -> Result<()> {
         self.store.set_fuel(self.config.max_fuel).map_err(|e| {
             Error::Wasm(format!("Failed to set fuel: {}", e))
@@ -82,6 +84,7 @@ impl OrganismInstance {
     }
 
     /// Execute one step of the organism
+    #[instrument(skip(self))]
     pub fn step(&mut self, ctx_ptr: i32) -> Result<(i32, Vec<Action>)> {
         // Reset fuel for this step
         self.store.set_fuel(self.config.max_fuel).map_err(|e| {
