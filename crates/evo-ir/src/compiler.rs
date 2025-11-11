@@ -94,11 +94,23 @@ impl Compiler {
     fn compile_function(&self, func: &Function) -> Result<wasm_encoder::Function, Error> {
         use wasm_encoder::Instruction as WI;
 
-        // Declare local variables properly
+        // Declare local variables: user locals + 2 scratch locals for compiler
+        let user_locals = func.num_locals;
         let mut locals = vec![];
-        if func.num_locals > 0 {
-            locals.push((func.num_locals as u32, ValType::I32));
+
+        // User-defined locals
+        if user_locals > 0 {
+            locals.push((user_locals as u32, ValType::I32));
         }
+
+        // Reserve 2 scratch locals for operations like Min, Max, Abs
+        // These are allocated after params and user locals
+        locals.push((2, ValType::I32));
+
+        // Scratch locals start after: [params] + [user locals]
+        // All our functions have 1 parameter, so scratch_base = 1 + user_locals
+        let scratch_base = 1u32 + user_locals as u32;
+
         let mut wasm_func = wasm_encoder::Function::new(locals);
 
         // Compile each basic block
@@ -110,7 +122,7 @@ impl Compiler {
             }
 
             for inst in &block.instructions {
-                self.compile_instruction(&mut wasm_func, inst)?;
+                self.compile_instruction(&mut wasm_func, inst, scratch_base)?;
             }
         }
 
@@ -124,6 +136,7 @@ impl Compiler {
         &self,
         wasm_func: &mut wasm_encoder::Function,
         inst: &Instruction,
+        scratch_base: u32,
     ) -> Result<(), Error> {
         use wasm_encoder::Instruction as WI;
 
@@ -252,17 +265,18 @@ impl Compiler {
             }
             Opcode::Abs => {
                 self.load_operands(wasm_func, &inst.operands)?;
-                // Absolute value using local variable
-                let temp_local = 0; // Use first local as temp
-                wasm_func.instruction(&WI::LocalTee(temp_local));
+                // Absolute value using scratch local
+                // Algorithm: mask = x >> 31; abs = (x ^ mask) - mask
+                let temp = scratch_base;
+                wasm_func.instruction(&WI::LocalTee(temp));
                 wasm_func.instruction(&WI::I32Const(31));
-                wasm_func.instruction(&WI::I32ShrS); // Sign bit
-                wasm_func.instruction(&WI::LocalGet(temp_local));
-                wasm_func.instruction(&WI::I32Xor);
-                wasm_func.instruction(&WI::LocalGet(temp_local));
+                wasm_func.instruction(&WI::I32ShrS); // Sign bit mask (0 or -1)
+                wasm_func.instruction(&WI::LocalGet(temp));
+                wasm_func.instruction(&WI::I32Xor);   // Flip bits if negative
+                wasm_func.instruction(&WI::LocalGet(temp));
                 wasm_func.instruction(&WI::I32Const(31));
                 wasm_func.instruction(&WI::I32ShrS);
-                wasm_func.instruction(&WI::I32Sub);
+                wasm_func.instruction(&WI::I32Sub);   // Subtract mask (adds 1 if negative)
                 if let Some(dest) = inst.dest {
                     wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
                 }
@@ -270,17 +284,19 @@ impl Compiler {
             Opcode::Min => {
                 self.load_operands(wasm_func, &inst.operands)?;
                 // Min: a < b ? a : b
-                // Stack: a b
-                let temp_a = 0;
-                let temp_b = 1;
-                wasm_func.instruction(&WI::LocalSet(temp_b));
-                wasm_func.instruction(&WI::LocalSet(temp_a));
-                wasm_func.instruction(&WI::LocalGet(temp_a));
-                wasm_func.instruction(&WI::LocalGet(temp_b));
-                wasm_func.instruction(&WI::LocalGet(temp_a));
-                wasm_func.instruction(&WI::LocalGet(temp_b));
-                wasm_func.instruction(&WI::I32LtS);
-                wasm_func.instruction(&WI::Select);
+                // Stack after load_operands: a b
+                // Save to scratch locals, then use select
+                let temp_a = scratch_base;
+                let temp_b = scratch_base + 1;
+                wasm_func.instruction(&WI::LocalSet(temp_b));  // Save b
+                wasm_func.instruction(&WI::LocalSet(temp_a));  // Save a
+                // Now reload for select: need [a, b, condition] on stack
+                wasm_func.instruction(&WI::LocalGet(temp_a));  // Push a
+                wasm_func.instruction(&WI::LocalGet(temp_b));  // Push b
+                wasm_func.instruction(&WI::LocalGet(temp_a));  // Push a for comparison
+                wasm_func.instruction(&WI::LocalGet(temp_b));  // Push b for comparison
+                wasm_func.instruction(&WI::I32LtS);            // a < b
+                wasm_func.instruction(&WI::Select);            // Select a if true, b if false
                 if let Some(dest) = inst.dest {
                     wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
                 }
@@ -288,16 +304,18 @@ impl Compiler {
             Opcode::Max => {
                 self.load_operands(wasm_func, &inst.operands)?;
                 // Max: a > b ? a : b
-                let temp_a = 0;
-                let temp_b = 1;
-                wasm_func.instruction(&WI::LocalSet(temp_b));
-                wasm_func.instruction(&WI::LocalSet(temp_a));
-                wasm_func.instruction(&WI::LocalGet(temp_a));
-                wasm_func.instruction(&WI::LocalGet(temp_b));
-                wasm_func.instruction(&WI::LocalGet(temp_a));
-                wasm_func.instruction(&WI::LocalGet(temp_b));
-                wasm_func.instruction(&WI::I32GtS);
-                wasm_func.instruction(&WI::Select);
+                // Stack after load_operands: a b
+                let temp_a = scratch_base;
+                let temp_b = scratch_base + 1;
+                wasm_func.instruction(&WI::LocalSet(temp_b));  // Save b
+                wasm_func.instruction(&WI::LocalSet(temp_a));  // Save a
+                // Now reload for select: need [a, b, condition] on stack
+                wasm_func.instruction(&WI::LocalGet(temp_a));  // Push a
+                wasm_func.instruction(&WI::LocalGet(temp_b));  // Push b
+                wasm_func.instruction(&WI::LocalGet(temp_a));  // Push a for comparison
+                wasm_func.instruction(&WI::LocalGet(temp_b));  // Push b for comparison
+                wasm_func.instruction(&WI::I32GtS);            // a > b
+                wasm_func.instruction(&WI::Select);            // Select a if true, b if false
                 if let Some(dest) = inst.dest {
                     wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
                 }
