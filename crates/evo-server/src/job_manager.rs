@@ -6,7 +6,7 @@ use evo_core::{JobId, Result};
 use evo_world::IslandJob;
 use parking_lot::RwLock;
 use std::time::{Duration, Instant};
-use tracing::{debug, warn};
+use tracing::{debug, warn, instrument};
 
 #[derive(Debug, Clone)]
 pub struct JobStats {
@@ -38,6 +38,7 @@ impl JobManager {
     }
 
     /// Get a job for a worker
+    #[instrument(skip(self, evolution))]
     pub async fn get_job(&self, evolution: &EvolutionEngine) -> Result<IslandJob> {
         // First, try to get a pending job
         {
@@ -78,6 +79,7 @@ impl JobManager {
     }
 
     /// Mark a job as completed
+    #[instrument(skip(self))]
     pub async fn mark_job_complete(&self, job_id: JobId) {
         if self.assigned_jobs.remove(&job_id).is_some() {
             let mut completed = self.completed_jobs.write();
@@ -87,6 +89,7 @@ impl JobManager {
     }
 
     /// Check for timed-out jobs and reassign them
+    #[instrument(skip(self))]
     pub async fn check_timeouts(&self, timeout: Duration) {
         let now = Instant::now();
         let mut timed_out = Vec::new();
@@ -110,6 +113,7 @@ impl JobManager {
     }
 
     /// Get job statistics
+    #[instrument(skip(self))]
     pub async fn get_stats(&self) -> JobStats {
         let pending = self.pending_jobs.read().len();
         let assigned = self.assigned_jobs.len();
@@ -124,6 +128,7 @@ impl JobManager {
     }
 
     /// Add a job to the queue
+    #[instrument(skip(self, job), fields(job_id = ?job.job_id))]
     pub async fn enqueue_job(&self, job: IslandJob) {
         let mut pending = self.pending_jobs.write();
         pending.push(job);

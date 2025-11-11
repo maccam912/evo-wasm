@@ -17,7 +17,13 @@ use std::sync::Arc;
 use tokio::signal;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
-use tracing::info;
+use tracing::{info, instrument};
+use axum::middleware::{self, Next};
+use axum::body::Body;
+use axum::http::Request;
+use axum::response::Response;
+use opentelemetry::global;
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -67,6 +73,7 @@ async fn main() -> Result<()> {
         .route("/api/stats", get(api::get_stats))
         .route("/api/config", get(api::get_config))
         .layer(CorsLayer::permissive())
+        .layer(middleware::from_fn(extract_trace_context))
         .layer(TraceLayer::new_for_http())
         .with_state(api::AppState {
             job_manager,
@@ -91,6 +98,33 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+/// Middleware to extract trace context from incoming HTTP requests
+async fn extract_trace_context(
+    request: Request<Body>,
+    next: Next,
+) -> Response {
+    // Extract trace context from headers
+    let headers = request.headers();
+    let mut header_map = std::collections::HashMap::new();
+
+    for (key, value) in headers.iter() {
+        if let Ok(value_str) = value.to_str() {
+            header_map.insert(key.as_str().to_string(), value_str.to_string());
+        }
+    }
+
+    // Extract context using the global propagator
+    let parent_context = global::get_text_map_propagator(|propagator| {
+        propagator.extract(&header_map)
+    });
+
+    // Set the extracted context as the parent of the current span
+    tracing::Span::current().set_parent(parent_context);
+
+    next.run(request).await
+}
+
+#[instrument]
 async fn shutdown_signal() {
     let ctrl_c = async {
         signal::ctrl_c()

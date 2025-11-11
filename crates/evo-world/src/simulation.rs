@@ -16,7 +16,7 @@ use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, warn, instrument};
 
 pub struct Simulation {
     grid: Arc<RwLock<Grid>>,
@@ -65,6 +65,7 @@ impl Simulation {
     }
 
     /// Run the simulation for the specified number of ticks
+    #[instrument(skip(self), fields(num_ticks = self.config.num_ticks))]
     pub fn run(&mut self) -> Result<SimulationResult> {
         info!("Starting simulation for {} ticks", self.config.num_ticks);
 
@@ -86,6 +87,7 @@ impl Simulation {
     }
 
     /// Execute one simulation step
+    #[instrument(skip(self), fields(tick = self.tick))]
     fn step(&mut self) -> Result<()> {
         // Regenerate resources
         self.grid

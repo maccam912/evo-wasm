@@ -9,7 +9,7 @@ use rand::{seq::SliceRandom, Rng};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use std::collections::HashMap;
-use tracing::{debug, info};
+use tracing::{debug, info, instrument};
 
 pub struct EvolutionEngine {
     db: Database,
@@ -31,6 +31,7 @@ impl EvolutionEngine {
     }
 
     /// Create a new island job
+    #[instrument(skip(self))]
     pub async fn create_job(&self) -> Result<IslandJob> {
         let job_id = JobId::new();
         let config = self.config.read().clone();
@@ -49,6 +50,7 @@ impl EvolutionEngine {
     }
 
     /// Process results from a completed job
+    #[instrument(skip(self, result), fields(job_id = ?result.job_id, survivors = result.result.survivors.len()))]
     pub async fn process_result(&self, result: IslandResult) -> Result<()> {
         info!(
             "Processing result for job {:?}: {} survivors",
@@ -85,6 +87,7 @@ impl EvolutionEngine {
     }
 
     /// Select genomes for a new job
+    #[instrument(skip(self))]
     async fn select_genomes_for_job(
         &self,
         count: usize,
@@ -132,6 +135,7 @@ impl EvolutionEngine {
     }
 
     /// Perform selection and breeding to create new genomes
+    #[instrument(skip(self))]
     async fn perform_selection(&self) -> Result<()> {
         info!("Performing selection and breeding");
 
@@ -184,7 +188,7 @@ impl EvolutionEngine {
                     self.db.get_genome(parent2_id).await,
                 ) {
                     // Crossover and mutate
-                    let mut child = {
+                    let child = {
                         let mut rng = self.rng.write();
                         let child = self.mutator.crossover(&parent1, &parent2, &mut *rng);
                         self.mutator.mutate(&mut child.clone(), &mut *rng);
@@ -203,6 +207,7 @@ impl EvolutionEngine {
     }
 
     /// Create initial random genomes
+    #[instrument(skip(self))]
     fn create_initial_genomes(&self, count: usize) -> Result<Vec<(LineageId, Program)>> {
         info!("Creating {} initial genomes", count);
 
@@ -264,11 +269,13 @@ impl EvolutionEngine {
     }
 
     /// Get current configuration
+    #[instrument(skip(self))]
     pub async fn get_config(&self) -> JobConfig {
         self.config.read().clone()
     }
 
     /// Update configuration
+    #[instrument(skip(self, config))]
     pub async fn update_config(&self, config: JobConfig) {
         *self.config.write() = config;
         info!("Configuration updated");

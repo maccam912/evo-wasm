@@ -9,12 +9,16 @@ use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{
     trace::{RandomIdGenerator, Sampler, TracerProvider},
     Resource,
+    propagation::TraceContextPropagator,
 };
 use opentelemetry_semantic_conventions::resource::{SERVICE_NAME, SERVICE_VERSION};
 use tracing::info;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, fmt::format::FmtSpan};
 
 pub fn init_telemetry(otel_endpoint: Option<&str>) -> Result<()> {
+    // Set global text map propagator for W3C Trace Context
+    global::set_text_map_propagator(TraceContextPropagator::new());
+
     // Check for standard OTEL environment variable, fallback to custom parameter
     let endpoint = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
         .ok()
@@ -63,12 +67,20 @@ pub fn init_telemetry(otel_endpoint: Option<&str>) -> Result<()> {
         .with_tracer(tracer);
 
     // Set up tracing subscriber
+    // Use JSON formatting to include trace IDs in logs
+    let fmt_layer = tracing_subscriber::fmt::layer()
+        .with_target(true)
+        .with_thread_ids(true)
+        .with_thread_names(true)
+        .json()
+        .flatten_event(true);
+
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "info,evo_server=debug,evo_world=debug".into()),
         )
-        .with(tracing_subscriber::fmt::layer().with_target(true))
+        .with(fmt_layer)
         .with(telemetry_layer)
         .init();
 
