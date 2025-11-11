@@ -46,10 +46,22 @@ pub fn init_telemetry(otel_endpoint: Option<&str>) -> Result<()> {
             .with_endpoint(&endpoint)
             .build()?;
 
+        // Configure batch span processor with aggressive settings for better trace visibility
+        let batch_config = trace::BatchConfigBuilder::default()
+            .with_max_queue_size(2048)
+            .with_max_export_batch_size(512)
+            .with_scheduled_delay(std::time::Duration::from_secs(1))
+            .with_max_export_timeout(std::time::Duration::from_secs(30))
+            .build();
+
+        let batch_processor = trace::BatchSpanProcessor::builder(trace_exporter, Tokio)
+            .with_batch_config(batch_config)
+            .build();
+
         let tracer_provider = trace::TracerProvider::builder()
             .with_resource(resource.clone())
             .with_sampler(trace::Sampler::AlwaysOn)
-            .with_batch_exporter(trace_exporter, Tokio)
+            .with_span_processor(batch_processor)
             .build();
 
         // Create tracer from the provider
