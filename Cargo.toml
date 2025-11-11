@@ -43,11 +43,12 @@ wabt = "0.10"
 sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "sqlite", "migrate"] }
 
 # OpenTelemetry
-opentelemetry = "0.22"
-opentelemetry_sdk = { version = "0.22", features = ["rt-tokio"] }
-opentelemetry-otlp = { version = "0.15", features = ["tokio"] }
-opentelemetry-semantic-conventions = "0.14"
-tracing-opentelemetry = "0.23"
+opentelemetry = { version = "0.27", features = ["trace", "logs"] }
+opentelemetry_sdk = { version = "0.27", features = ["trace", "logs", "rt-tokio"] }
+opentelemetry-otlp = { version = "0.27", features = ["grpc-tonic"] }
+opentelemetry-semantic-conventions = "0.27"
+tracing-opentelemetry = "0.28"
+opentelemetry-appender-tracing = "0.27"
 
 # HTTP client
 reqwest = { version = "0.11", features = ["json"] }
