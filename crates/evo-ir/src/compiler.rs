@@ -134,6 +134,8 @@ impl Compiler {
                 wasm_func.instruction(&WI::I32Add);
                 if let Some(dest) = inst.dest {
                     wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
+                } else {
+                    wasm_func.instruction(&WI::Drop);
                 }
             }
             Opcode::Sub => {
@@ -141,6 +143,8 @@ impl Compiler {
                 wasm_func.instruction(&WI::I32Sub);
                 if let Some(dest) = inst.dest {
                     wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
+                } else {
+                    wasm_func.instruction(&WI::Drop);
                 }
             }
             Opcode::Mul => {
@@ -148,6 +152,8 @@ impl Compiler {
                 wasm_func.instruction(&WI::I32Mul);
                 if let Some(dest) = inst.dest {
                     wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
+                } else {
+                    wasm_func.instruction(&WI::Drop);
                 }
             }
             Opcode::Div => {
@@ -155,6 +161,8 @@ impl Compiler {
                 wasm_func.instruction(&WI::I32DivS);
                 if let Some(dest) = inst.dest {
                     wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
+                } else {
+                    wasm_func.instruction(&WI::Drop);
                 }
             }
             Opcode::Mod => {
@@ -162,6 +170,8 @@ impl Compiler {
                 wasm_func.instruction(&WI::I32RemS);
                 if let Some(dest) = inst.dest {
                     wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
+                } else {
+                    wasm_func.instruction(&WI::Drop);
                 }
             }
 
@@ -171,6 +181,8 @@ impl Compiler {
                 wasm_func.instruction(&WI::I32Eq);
                 if let Some(dest) = inst.dest {
                     wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
+                } else {
+                    wasm_func.instruction(&WI::Drop);
                 }
             }
             Opcode::Ne => {
@@ -178,6 +190,8 @@ impl Compiler {
                 wasm_func.instruction(&WI::I32Ne);
                 if let Some(dest) = inst.dest {
                     wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
+                } else {
+                    wasm_func.instruction(&WI::Drop);
                 }
             }
             Opcode::Lt => {
@@ -185,6 +199,8 @@ impl Compiler {
                 wasm_func.instruction(&WI::I32LtS);
                 if let Some(dest) = inst.dest {
                     wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
+                } else {
+                    wasm_func.instruction(&WI::Drop);
                 }
             }
             Opcode::Le => {
@@ -192,6 +208,8 @@ impl Compiler {
                 wasm_func.instruction(&WI::I32LeS);
                 if let Some(dest) = inst.dest {
                     wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
+                } else {
+                    wasm_func.instruction(&WI::Drop);
                 }
             }
             Opcode::Gt => {
@@ -199,6 +217,8 @@ impl Compiler {
                 wasm_func.instruction(&WI::I32GtS);
                 if let Some(dest) = inst.dest {
                     wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
+                } else {
+                    wasm_func.instruction(&WI::Drop);
                 }
             }
             Opcode::Ge => {
@@ -206,6 +226,8 @@ impl Compiler {
                 wasm_func.instruction(&WI::I32GeS);
                 if let Some(dest) = inst.dest {
                     wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
+                } else {
+                    wasm_func.instruction(&WI::Drop);
                 }
             }
 
@@ -215,6 +237,8 @@ impl Compiler {
                 wasm_func.instruction(&WI::I32And);
                 if let Some(dest) = inst.dest {
                     wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
+                } else {
+                    wasm_func.instruction(&WI::Drop);
                 }
             }
             Opcode::Or => {
@@ -222,6 +246,8 @@ impl Compiler {
                 wasm_func.instruction(&WI::I32Or);
                 if let Some(dest) = inst.dest {
                     wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
+                } else {
+                    wasm_func.instruction(&WI::Drop);
                 }
             }
             Opcode::Xor => {
@@ -229,6 +255,8 @@ impl Compiler {
                 wasm_func.instruction(&WI::I32Xor);
                 if let Some(dest) = inst.dest {
                     wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
+                } else {
+                    wasm_func.instruction(&WI::Drop);
                 }
             }
             Opcode::Not => {
@@ -237,6 +265,8 @@ impl Compiler {
                 wasm_func.instruction(&WI::I32Eqz);
                 if let Some(dest) = inst.dest {
                     wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
+                } else {
+                    wasm_func.instruction(&WI::Drop);
                 }
             }
 
@@ -248,6 +278,8 @@ impl Compiler {
                 wasm_func.instruction(&WI::I32Sub);
                 if let Some(dest) = inst.dest {
                     wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
+                } else {
+                    wasm_func.instruction(&WI::Drop);
                 }
             }
             Opcode::Abs => {
@@ -265,6 +297,8 @@ impl Compiler {
                 wasm_func.instruction(&WI::I32Sub);
                 if let Some(dest) = inst.dest {
                     wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
+                } else {
+                    wasm_func.instruction(&WI::Drop);
                 }
             }
             Opcode::Min => {
@@ -283,6 +317,8 @@ impl Compiler {
                 wasm_func.instruction(&WI::Select);
                 if let Some(dest) = inst.dest {
                     wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
+                } else {
+                    wasm_func.instruction(&WI::Drop);
                 }
             }
             Opcode::Max => {
@@ -300,6 +336,8 @@ impl Compiler {
                 wasm_func.instruction(&WI::Select);
                 if let Some(dest) = inst.dest {
                     wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
+                } else {
+                    wasm_func.instruction(&WI::Drop);
                 }
             }
 
@@ -309,6 +347,8 @@ impl Compiler {
                     wasm_func.instruction(&WI::I32Const(value.as_i32()));
                     if let Some(dest) = inst.dest {
                         wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
+                    } else {
+                        wasm_func.instruction(&WI::Drop);
                     }
                 }
             }
@@ -326,12 +366,16 @@ impl Compiler {
                 wasm_func.instruction(&WI::Call(self.get_import_index("get_energy")));
                 if let Some(dest) = inst.dest {
                     wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
+                } else {
+                    wasm_func.instruction(&WI::Drop);
                 }
             }
             Opcode::GetAge => {
                 wasm_func.instruction(&WI::Call(self.get_import_index("get_age")));
                 if let Some(dest) = inst.dest {
                     wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
+                } else {
+                    wasm_func.instruction(&WI::Drop);
                 }
             }
             Opcode::Move => {
@@ -339,12 +383,16 @@ impl Compiler {
                 wasm_func.instruction(&WI::Call(self.get_import_index("move_dir")));
                 if let Some(dest) = inst.dest {
                     wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
+                } else {
+                    wasm_func.instruction(&WI::Drop);
                 }
             }
             Opcode::Eat => {
                 wasm_func.instruction(&WI::Call(self.get_import_index("eat")));
                 if let Some(dest) = inst.dest {
                     wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
+                } else {
+                    wasm_func.instruction(&WI::Drop);
                 }
             }
             Opcode::SenseEnv => {
@@ -352,6 +400,8 @@ impl Compiler {
                 wasm_func.instruction(&WI::Call(self.get_import_index("env_read")));
                 if let Some(dest) = inst.dest {
                     wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
+                } else {
+                    wasm_func.instruction(&WI::Drop);
                 }
             }
             Opcode::SenseNeighbor => {
@@ -359,6 +409,8 @@ impl Compiler {
                 wasm_func.instruction(&WI::Call(self.get_import_index("sense_neighbor")));
                 if let Some(dest) = inst.dest {
                     wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
+                } else {
+                    wasm_func.instruction(&WI::Drop);
                 }
             }
             Opcode::Attack => {
@@ -366,12 +418,16 @@ impl Compiler {
                 wasm_func.instruction(&WI::Call(self.get_import_index("attack")));
                 if let Some(dest) = inst.dest {
                     wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
+                } else {
+                    wasm_func.instruction(&WI::Drop);
                 }
             }
             Opcode::Reproduce => {
                 wasm_func.instruction(&WI::Call(self.get_import_index("try_reproduce")));
                 if let Some(dest) = inst.dest {
                     wasm_func.instruction(&WI::LocalSet(dest.0 as u32));
+                } else {
+                    wasm_func.instruction(&WI::Drop);
                 }
             }
             Opcode::EmitSignal => {
