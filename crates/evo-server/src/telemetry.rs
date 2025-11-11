@@ -14,7 +14,107 @@ use opentelemetry_sdk::{
 };
 use opentelemetry_semantic_conventions::resource::{SERVICE_NAME, SERVICE_VERSION};
 use tracing::info;
-use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing::Subscriber;
+use tracing_subscriber::{
+    fmt::{self, format::Writer, FmtContext, FormatEvent, FormatFields},
+    layer::SubscriberExt,
+    registry::LookupSpan,
+    util::SubscriberInitExt,
+    EnvFilter,
+};
+
+/// Custom JSON formatter that includes OpenTelemetry trace_id and span_id
+struct JsonWithTraceId;
+
+impl<S, N> FormatEvent<S, N> for JsonWithTraceId
+where
+    S: Subscriber + for<'a> LookupSpan<'a>,
+    N: for<'a> FormatFields<'a> + 'static,
+{
+    fn format_event(
+        &self,
+        ctx: &FmtContext<'_, S, N>,
+        mut writer: Writer<'_>,
+        event: &tracing::Event<'_>,
+    ) -> std::fmt::Result {
+        use opentelemetry::trace::TraceContextExt;
+
+        let mut visit_buf = String::new();
+        let mut visitor = serde_json::Map::new();
+
+        // Extract event metadata
+        let metadata = event.metadata();
+        visitor.insert("timestamp".to_string(), serde_json::json!(chrono::Utc::now().to_rfc3339()));
+        visitor.insert("level".to_string(), serde_json::json!(metadata.level().as_str()));
+        visitor.insert("target".to_string(), serde_json::json!(metadata.target()));
+
+        // Extract trace context from current span
+        if let Some(span) = ctx.lookup_current() {
+            // Get the OpenTelemetry context from the span
+            let extensions = span.extensions();
+            if let Some(otel_ctx) = extensions.get::<opentelemetry::Context>() {
+                let span_ref = otel_ctx.span();
+                let span_context = span_ref.span_context();
+                if span_context.is_valid() {
+                    visitor.insert("trace_id".to_string(), serde_json::json!(span_context.trace_id().to_string()));
+                    visitor.insert("span_id".to_string(), serde_json::json!(span_context.span_id().to_string()));
+                }
+            }
+
+            // Add span name
+            visitor.insert("span".to_string(), serde_json::json!(span.name()));
+        }
+
+        // Extract thread info
+        visitor.insert("thread_id".to_string(), serde_json::json!(format!("{:?}", std::thread::current().id())));
+        visitor.insert("thread_name".to_string(), serde_json::json!(std::thread::current().name().unwrap_or("unknown")));
+
+        // Extract event fields
+        {
+            let mut field_visitor = JsonVisitor(&mut visit_buf);
+            event.record(&mut field_visitor);
+        } // Drop field_visitor here
+
+        if !visit_buf.is_empty() {
+            if let Ok(fields) = serde_json::from_str::<serde_json::Value>(&visit_buf) {
+                if let serde_json::Value::Object(field_map) = fields {
+                    for (key, value) in field_map {
+                        visitor.insert(key, value);
+                    }
+                }
+            }
+        }
+
+        // Write the JSON output
+        let json = serde_json::to_string(&visitor).map_err(|_| std::fmt::Error)?;
+        writeln!(writer, "{}", json)?;
+
+        Ok(())
+    }
+}
+
+/// Visitor for collecting event fields into JSON
+struct JsonVisitor<'a>(&'a mut String);
+
+impl<'a> tracing::field::Visit for JsonVisitor<'a> {
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+        // Simple field collection - in production you'd want proper JSON serialization
+        if self.0.is_empty() {
+            *self.0 = format!("{{\"{}\": \"{:?}\"", field.name(), value);
+        } else {
+            use std::fmt::Write;
+            let _ = write!(self.0, ", \"{}\": \"{:?}\"", field.name(), value);
+        }
+    }
+}
+
+impl<'a> Drop for JsonVisitor<'a> {
+    fn drop(&mut self) {
+        if !self.0.is_empty() {
+            self.0.push('}');
+        }
+    }
+}
 
 pub fn init_telemetry(otel_endpoint: Option<&str>) -> Result<()> {
     // Set global text map propagator for W3C Trace Context
@@ -96,12 +196,9 @@ pub fn init_telemetry(otel_endpoint: Option<&str>) -> Result<()> {
                 "info,evo_server=debug,evo_world=debug,evo_worker=debug".into()
             });
 
-        // Stdout formatter for local debugging (JSON format)
+        // Stdout formatter for local debugging (JSON format with trace context)
         let fmt_layer = fmt::layer()
-            .with_target(true)
-            .with_thread_ids(true)
-            .with_thread_names(true)
-            .json();
+            .event_format(JsonWithTraceId);
 
         // OpenTelemetry trace layer
         let otel_trace_layer = tracing_opentelemetry::layer()
@@ -130,10 +227,7 @@ pub fn init_telemetry(otel_endpoint: Option<&str>) -> Result<()> {
         let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
 
         let fmt_layer = fmt::layer()
-            .with_target(true)
-            .with_thread_ids(true)
-            .with_thread_names(true)
-            .json();
+            .event_format(JsonWithTraceId);
 
         tracing_subscriber::registry()
             .with(
