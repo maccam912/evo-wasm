@@ -1,19 +1,15 @@
 //! OpenTelemetry instrumentation.
 
 use anyhow::Result;
-use opentelemetry::{
-    global,
-    trace::TracerProvider as _,
-};
+use opentelemetry::{global, trace::TracerProvider as _, KeyValue};
+use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{
-    trace::{RandomIdGenerator, Sampler, TracerProvider},
-    Resource,
-    propagation::TraceContextPropagator,
+    logs, propagation::TraceContextPropagator, runtime::Tokio, trace, Resource,
 };
 use opentelemetry_semantic_conventions::resource::{SERVICE_NAME, SERVICE_VERSION};
 use tracing::info;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, fmt::format::FmtSpan};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 pub fn init_telemetry(otel_endpoint: Option<&str>) -> Result<()> {
     // Set global text map propagator for W3C Trace Context
@@ -24,67 +20,101 @@ pub fn init_telemetry(otel_endpoint: Option<&str>) -> Result<()> {
         .ok()
         .or_else(|| otel_endpoint.map(|s| s.to_string()));
 
-    let tracer = if let Some(endpoint) = endpoint {
-        info!("Initializing OpenTelemetry with OTLP endpoint: {}", endpoint);
+    if let Some(endpoint) = endpoint {
+        // Shared resource: shows up on both traces and logs
+        let resource = Resource::new(vec![
+            KeyValue::new(
+                SERVICE_NAME,
+                std::env::var("OTEL_SERVICE_NAME")
+                    .unwrap_or_else(|_| "evo-wasm-server".to_string()),
+            ),
+            KeyValue::new(SERVICE_VERSION, env!("CARGO_PKG_VERSION")),
+        ]);
 
-        // Configure OTLP exporter
-        let exporter = opentelemetry_otlp::new_exporter()
-            .tonic()
-            .with_endpoint(&endpoint);
-
-        // Build and install OTLP pipeline (sets global tracer provider and returns tracer)
-        opentelemetry_otlp::new_pipeline()
-            .tracing()
-            .with_exporter(exporter)
-            .with_trace_config(
-                opentelemetry_sdk::trace::Config::default()
-                    .with_sampler(Sampler::AlwaysOn)
-                    .with_id_generator(RandomIdGenerator::default())
-                    .with_resource(Resource::new(vec![
-                        opentelemetry::KeyValue::new(SERVICE_NAME,
-                            std::env::var("OTEL_SERVICE_NAME").unwrap_or_else(|_| "evo-wasm-server".to_string())
-                        ),
-                        opentelemetry::KeyValue::new(SERVICE_VERSION, env!("CARGO_PKG_VERSION")),
-                    ]))
-            )
-            .install_batch(opentelemetry_sdk::runtime::Tokio)?
-    } else {
-        info!("OpenTelemetry disabled (no endpoint configured)");
-
-        // Create no-op tracer provider and get tracer
-        let tracer_provider = TracerProvider::builder()
-            .with_config(
-                opentelemetry_sdk::trace::Config::default()
-                    .with_sampler(Sampler::AlwaysOff)
+        // ---- Configure traces ----
+        let tracer_provider = trace::TracerProvider::builder()
+            .with_resource(resource.clone())
+            .with_sampler(trace::Sampler::AlwaysOn)
+            .with_batch_exporter(
+                opentelemetry_otlp::SpanExporter::builder()
+                    .with_tonic()
+                    .with_endpoint(&endpoint)
+                    .build()?,
+                Tokio,
             )
             .build();
 
-        global::set_tracer_provider(tracer_provider.clone());
-        tracer_provider.tracer("evo-wasm-server")
-    };
+        let tracer = tracer_provider.tracer("evo-wasm-server");
+        global::set_tracer_provider(tracer_provider);
 
-    let telemetry_layer = tracing_opentelemetry::layer()
-        .with_tracer(tracer);
+        let trace_layer = tracing_opentelemetry::layer().with_tracer(tracer);
 
-    // Set up tracing subscriber
-    // Use JSON formatting to include trace IDs in logs
-    let fmt_layer = tracing_subscriber::fmt::layer()
-        .with_target(true)
-        .with_thread_ids(true)
-        .with_thread_names(true)
-        .json()
-        .flatten_event(true);
+        // ---- Configure logs ----
+        let logger_provider = logs::LoggerProvider::builder()
+            .with_resource(resource)
+            .with_batch_exporter(
+                opentelemetry_otlp::LogExporter::builder()
+                    .with_tonic()
+                    .with_endpoint(&endpoint)
+                    .build()?,
+                Tokio,
+            )
+            .build();
 
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info,evo_server=debug,evo_world=debug".into()),
-        )
-        .with(fmt_layer)
-        .with(telemetry_layer)
-        .init();
+        // Bridge tracing events -> OTEL LogRecords (+ attach TraceId/SpanId)
+        let otel_log_layer = OpenTelemetryTracingBridge::new(&logger_provider);
 
-    info!("Telemetry initialized");
+        // ---- Set up tracing-subscriber registry ----
+        // Use JSON formatting for human-readable stdout logs
+        let fmt_layer = tracing_subscriber::fmt::layer()
+            .with_target(true)
+            .with_thread_ids(true)
+            .with_thread_names(true)
+            .json()
+            .flatten_event(true);
+
+        tracing_subscriber::registry()
+            .with(
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| "info,evo_server=debug,evo_world=debug".into()),
+            )
+            .with(fmt_layer)       // stdout logs (JSON)
+            .with(trace_layer)     // export spans to OTLP
+            .with(otel_log_layer)  // export logs to OTLP with trace context
+            .init();
+
+        info!("Telemetry initialized with OTLP endpoint: {}", endpoint);
+    } else {
+        // Create no-op tracer provider
+        let tracer_provider = trace::TracerProvider::builder()
+            .with_sampler(trace::Sampler::AlwaysOff)
+            .build();
+
+        let tracer = tracer_provider.tracer("evo-wasm-server");
+        global::set_tracer_provider(tracer_provider);
+
+        let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+
+        // Just use JSON formatting to stdout
+        let fmt_layer = tracing_subscriber::fmt::layer()
+            .with_target(true)
+            .with_thread_ids(true)
+            .with_thread_names(true)
+            .json()
+            .flatten_event(true);
+
+        tracing_subscriber::registry()
+            .with(
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| "info,evo_server=debug,evo_world=debug".into()),
+            )
+            .with(fmt_layer)
+            .with(telemetry_layer)
+            .init();
+
+        info!("OpenTelemetry disabled (no endpoint configured)");
+    }
+
     Ok(())
 }
 
