@@ -37,9 +37,6 @@ where
         mut writer: Writer<'_>,
         event: &tracing::Event<'_>,
     ) -> std::fmt::Result {
-        use opentelemetry::trace::TraceContextExt;
-        use tracing_opentelemetry::OpenTelemetrySpanExt;
-
         let mut visit_buf = String::new();
         let mut visitor = serde_json::Map::new();
 
@@ -51,13 +48,15 @@ where
 
         // Extract trace context from current span
         if let Some(span) = ctx.lookup_current() {
-            // Get the OpenTelemetry context from the span using OpenTelemetrySpanExt
-            let otel_ctx = span.context();
-            let span_ref = otel_ctx.span();
-            let span_context = span_ref.span_context();
-            if span_context.is_valid() {
-                visitor.insert("trace_id".to_string(), serde_json::json!(span_context.trace_id().to_string()));
-                visitor.insert("span_id".to_string(), serde_json::json!(span_context.span_id().to_string()));
+            // Get the OpenTelemetry data from the span's extensions
+            let extensions = span.extensions();
+            if let Some(otel_data) = extensions.get::<tracing_opentelemetry::OtelData>() {
+                if let Some(trace_id) = otel_data.builder.trace_id {
+                    visitor.insert("trace_id".to_string(), serde_json::json!(trace_id.to_string()));
+                }
+                if let Some(span_id) = otel_data.builder.span_id {
+                    visitor.insert("span_id".to_string(), serde_json::json!(span_id.to_string()));
+                }
             }
 
             // Add span name
