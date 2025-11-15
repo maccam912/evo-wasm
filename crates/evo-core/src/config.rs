@@ -223,7 +223,7 @@ mod tests {
         assert_eq!(world_config.height, 256);
 
         let energy_config = EnergyConfig::default();
-        assert_eq!(energy_config.initial_energy, 1000);
+        assert_eq!(energy_config.initial_energy, 1500);
 
         let exec_config = ExecutionConfig::default();
         assert_eq!(exec_config.max_fuel_per_step, 10_000);
