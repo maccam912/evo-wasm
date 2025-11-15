@@ -254,6 +254,12 @@ impl EvolutionEngine {
                 Instruction::new(Opcode::Eat).with_dest(Register(2)),
             );
 
+            // Try to reproduce (CRITICAL: without this, organisms never reproduce!)
+            // Reuse Register(0) since move directions are no longer needed
+            block.add_instruction(
+                Instruction::new(Opcode::Reproduce).with_dest(Register(0)),
+            );
+
             // Return
             block.add_instruction(Instruction::return_value(Register(2)));
 
