@@ -30,7 +30,7 @@ impl Default for WorldConfig {
             height: 256,
             resource_density: 0.3,
             max_resource_per_tile: 1000,
-            resource_regen_rate: 0.05,
+            resource_regen_rate: 0.15,  // Increased from 0.05 to support larger populations
             obstacle_density: 0.05,
             hazard_density: 0.02,
             hazard_damage: 10,
@@ -62,14 +62,14 @@ pub struct EnergyConfig {
 impl Default for EnergyConfig {
     fn default() -> Self {
         Self {
-            initial_energy: 1000,
+            initial_energy: 1500,  // Increased from 1000 to give organisms better starting chances
             basal_cost: 1,
             instruction_cost_per_k: 1,
-            move_cost: 5,
+            move_cost: 3,  // Reduced from 5 to make movement more affordable
             attack_cost: 10,
-            reproduce_cost: 500,
-            eat_efficiency: 0.8,
-            min_reproduce_energy: 600,
+            reproduce_cost: 300,  // Reduced from 500 to encourage more reproduction
+            eat_efficiency: 1.5,  // Increased from 0.8 to create positive energy economy
+            min_reproduce_energy: 400,  // Reduced from 600 to allow earlier reproduction
         }
     }
 }
@@ -223,7 +223,7 @@ mod tests {
         assert_eq!(world_config.height, 256);
 
         let energy_config = EnergyConfig::default();
-        assert_eq!(energy_config.initial_energy, 1000);
+        assert_eq!(energy_config.initial_energy, 1500);
 
         let exec_config = ExecutionConfig::default();
         assert_eq!(exec_config.max_fuel_per_step, 10_000);
