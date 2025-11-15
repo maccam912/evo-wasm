@@ -14,6 +14,7 @@ pub struct Organism {
     pub position: Position,
     pub energy: i32,
     pub age: u64,
+    pub birth_tick: u64,
     pub genome: Program,
     pub instance: Option<OrganismInstance>,
     pub metrics: FitnessMetrics,
@@ -27,6 +28,16 @@ impl Organism {
         energy: i32,
         genome: Program,
     ) -> Self {
+        Self::new_with_birth_tick(lineage_id, position, energy, genome, 0)
+    }
+
+    pub fn new_with_birth_tick(
+        lineage_id: LineageId,
+        position: Position,
+        energy: i32,
+        genome: Program,
+        birth_tick: u64,
+    ) -> Self {
         let mut visited = HashSet::new();
         visited.insert(position);
 
@@ -36,6 +47,7 @@ impl Organism {
             position,
             energy,
             age: 0,
+            birth_tick,
             genome,
             instance: None,
             metrics: FitnessMetrics::new(),
@@ -102,6 +114,7 @@ pub struct OrganismData {
     pub position: Position,
     pub energy: i32,
     pub age: u64,
+    pub birth_tick: u64,
     pub genome: Program,
     pub metrics: FitnessMetrics,
 }
@@ -114,6 +127,7 @@ impl From<&Organism> for OrganismData {
             position: org.position,
             energy: org.energy,
             age: org.age,
+            birth_tick: org.birth_tick,
             genome: org.genome.clone(),
             metrics: org.metrics.clone(),
         }

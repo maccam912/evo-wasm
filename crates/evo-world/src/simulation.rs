@@ -16,7 +16,7 @@ use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::{debug, info, warn, instrument};
+use tracing::{debug, info, warn, instrument, trace, event, Level};
 
 pub struct Simulation {
     grid: Arc<RwLock<Grid>>,
@@ -28,6 +28,10 @@ pub struct Simulation {
     config: JobConfig,
     rng: ChaCha8Rng,
     tick: u64,
+    // Reproduction tracking for metrics
+    reproduction_attempts: u64,
+    reproduction_successes: u64,
+    total_offspring_born: u64,
 }
 
 impl Simulation {
@@ -54,6 +58,9 @@ impl Simulation {
             config,
             rng,
             tick: 0,
+            reproduction_attempts: 0,
+            reproduction_successes: 0,
+            total_offspring_born: 0,
         };
 
         // Spawn initial organisms
@@ -83,7 +90,124 @@ impl Simulation {
             }
         }
 
+        // Emit comprehensive episode summary
+        self.emit_episode_summary();
+
         Ok(self.collect_results())
+    }
+
+    /// Emit comprehensive episode summary for replay/analysis
+    fn emit_episode_summary(&self) {
+        let survivors = &self.organisms;
+        let total_survivors = survivors.len();
+        let survivors_born_after_tick_1: Vec<_> = survivors.values()
+            .filter(|o| o.birth_tick > 1)
+            .collect();
+
+        let success_survivors_count = survivors_born_after_tick_1.len();
+
+        // Calculate aggregate stats for successful organisms
+        let mut success_stats = HashMap::new();
+        if !survivors_born_after_tick_1.is_empty() {
+            let total_offspring: u32 = survivors_born_after_tick_1.iter()
+                .map(|o| o.metrics.offspring_count)
+                .sum();
+            let avg_age: f64 = survivors_born_after_tick_1.iter()
+                .map(|o| o.age as f64)
+                .sum::<f64>() / survivors_born_after_tick_1.len() as f64;
+            let avg_energy: f64 = survivors_born_after_tick_1.iter()
+                .map(|o| o.energy as f64)
+                .sum::<f64>() / survivors_born_after_tick_1.len() as f64;
+            let max_offspring = survivors_born_after_tick_1.iter()
+                .map(|o| o.metrics.offspring_count)
+                .max()
+                .unwrap_or(0);
+
+            success_stats.insert("total_offspring", total_offspring);
+            success_stats.insert("avg_age", avg_age as u32);
+            success_stats.insert("avg_energy", avg_energy as u32);
+            success_stats.insert("max_offspring", max_offspring);
+        }
+
+        // Overall reproduction stats
+        let success_rate = if self.reproduction_attempts > 0 {
+            (self.reproduction_successes as f64 / self.reproduction_attempts as f64) * 100.0
+        } else {
+            0.0
+        };
+
+        info!(
+            event = "episode_summary",
+            total_ticks = self.config.num_ticks,
+            final_tick = self.tick,
+            total_survivors = total_survivors,
+            survivors_born_after_tick_1 = success_survivors_count,
+            reproduction_attempts_total = self.reproduction_attempts,
+            reproduction_successes_total = self.reproduction_successes,
+            reproduction_success_rate = format!("{:.2}%", success_rate),
+            total_offspring_born_entire_simulation = self.total_offspring_born,
+            "🏁 EPISODE COMPLETE - Summary Statistics"
+        );
+
+        // Detailed stats for successful organisms (born after tick 1 and survived)
+        if !survivors_born_after_tick_1.is_empty() {
+            info!(
+                event = "successful_organisms_summary",
+                count = success_survivors_count,
+                total_offspring = success_stats.get("total_offspring").copied().unwrap_or(0),
+                avg_age = success_stats.get("avg_age").copied().unwrap_or(0),
+                avg_energy = success_stats.get("avg_energy").copied().unwrap_or(0),
+                max_offspring = success_stats.get("max_offspring").copied().unwrap_or(0),
+                "🌟 Successful organisms (born after tick 1, survived to end)"
+            );
+
+            // Log individual successful organisms for detailed analysis
+            for organism in survivors_born_after_tick_1.iter().take(10) {
+                info!(
+                    event = "successful_organism_detail",
+                    organism_id = ?organism.id,
+                    lineage_id = ?organism.lineage_id,
+                    birth_tick = organism.birth_tick,
+                    final_age = organism.age,
+                    final_energy = organism.energy,
+                    offspring_count = organism.metrics.offspring_count,
+                    tiles_explored = organism.metrics.tiles_explored,
+                    times_eaten = organism.metrics.times_eaten,
+                    kills = organism.metrics.kills,
+                    position_x = organism.position.x,
+                    position_y = organism.position.y,
+                    "🏆 Top successful organism"
+                );
+            }
+        } else {
+            warn!(
+                event = "no_successful_organisms",
+                total_survivors = total_survivors,
+                "⚠️ No organisms born after tick 1 survived to the end"
+            );
+        }
+
+        // Episode replay data: key moments
+        event!(
+            Level::INFO,
+            histogram_name = "episode_duration",
+            histogram_value = self.config.num_ticks,
+            "Episode duration histogram"
+        );
+
+        event!(
+            Level::INFO,
+            gauge_name = "final_population",
+            gauge_value = total_survivors,
+            "Final population gauge"
+        );
+
+        event!(
+            Level::INFO,
+            gauge_name = "successful_organisms_final",
+            gauge_value = success_survivors_count,
+            "Successful organisms at end"
+        );
     }
 
     /// Execute one simulation step
@@ -112,7 +236,105 @@ impl Simulation {
         // Remove dead organisms
         self.remove_dead_organisms();
 
+        // Periodic metrics (every 100 ticks)
+        if self.tick % 100 == 0 && self.tick > 0 {
+            self.emit_population_metrics();
+        }
+
         Ok(())
+    }
+
+    /// Emit comprehensive population metrics
+    fn emit_population_metrics(&self) {
+        let total_pop = self.organisms.len();
+        let born_after_tick_1 = self.organisms.values()
+            .filter(|o| o.birth_tick > 1)
+            .count();
+
+        // Energy distribution
+        let energies: Vec<i32> = self.organisms.values().map(|o| o.energy).collect();
+        let avg_energy = if !energies.is_empty() {
+            energies.iter().sum::<i32>() / energies.len() as i32
+        } else {
+            0
+        };
+        let max_energy = energies.iter().max().copied().unwrap_or(0);
+        let min_energy = energies.iter().min().copied().unwrap_or(0);
+
+        // Age distribution
+        let ages: Vec<u64> = self.organisms.values().map(|o| o.age).collect();
+        let avg_age = if !ages.is_empty() {
+            ages.iter().sum::<u64>() / ages.len() as u64
+        } else {
+            0
+        };
+        let max_age = ages.iter().max().copied().unwrap_or(0);
+
+        // Offspring counts
+        let offspring_counts: Vec<u32> = self.organisms.values()
+            .map(|o| o.metrics.offspring_count)
+            .collect();
+        let total_parents = offspring_counts.iter().filter(|&&c| c > 0).count();
+        let total_offspring_alive = offspring_counts.iter().sum::<u32>();
+
+        // Reproduction stats
+        let success_rate = if self.reproduction_attempts > 0 {
+            (self.reproduction_successes as f64 / self.reproduction_attempts as f64) * 100.0
+        } else {
+            0.0
+        };
+
+        info!(
+            event = "population_metrics",
+            tick = self.tick,
+            total_population = total_pop,
+            born_after_tick_1 = born_after_tick_1,
+            avg_energy = avg_energy,
+            max_energy = max_energy,
+            min_energy = min_energy,
+            avg_age = avg_age,
+            max_age = max_age,
+            total_parents = total_parents,
+            total_offspring_alive = total_offspring_alive,
+            reproduction_attempts = self.reproduction_attempts,
+            reproduction_successes = self.reproduction_successes,
+            reproduction_success_rate = format!("{:.2}%", success_rate),
+            total_offspring_born = self.total_offspring_born,
+            "Population metrics snapshot"
+        );
+
+        // Emit as gauge metrics for Grafana
+        event!(
+            Level::INFO,
+            gauge_name = "population_total",
+            gauge_value = total_pop,
+            tick = self.tick,
+            "Population gauge"
+        );
+
+        event!(
+            Level::INFO,
+            gauge_name = "population_born_after_tick_1",
+            gauge_value = born_after_tick_1,
+            tick = self.tick,
+            "Population born after tick 1"
+        );
+
+        event!(
+            Level::INFO,
+            gauge_name = "avg_energy",
+            gauge_value = avg_energy,
+            tick = self.tick,
+            "Average energy"
+        );
+
+        event!(
+            Level::INFO,
+            gauge_name = "reproduction_success_rate",
+            gauge_value = success_rate as i32,
+            tick = self.tick,
+            "Reproduction success rate"
+        );
     }
 
     fn process_organism(&mut self, id: OrganismId) -> Result<()> {
@@ -283,18 +505,67 @@ impl Simulation {
             }
 
             Action::Reproduce if self.config.dynamic_rules.allow_reproduction => {
-                if energy < self.config.energy_config.reproduce_cost
-                    || energy < self.config.energy_config.min_reproduce_energy
-                {
+                self.reproduction_attempts += 1;
+
+                // Track why reproduction might fail
+                let mut failure_reason = None;
+
+                // Check energy requirements
+                if energy < self.config.energy_config.reproduce_cost {
+                    failure_reason = Some("insufficient_energy_for_cost");
+                    trace!(
+                        organism_id = ?id,
+                        current_energy = energy,
+                        reproduce_cost = self.config.energy_config.reproduce_cost,
+                        tick = self.tick,
+                        "Reproduction failed: insufficient energy for cost"
+                    );
+                } else if energy < self.config.energy_config.min_reproduce_energy {
+                    failure_reason = Some("below_minimum_energy");
+                    trace!(
+                        organism_id = ?id,
+                        current_energy = energy,
+                        min_reproduce_energy = self.config.energy_config.min_reproduce_energy,
+                        tick = self.tick,
+                        "Reproduction failed: below minimum energy threshold"
+                    );
+                }
+
+                if failure_reason.is_none() && self.organisms.len() >= self.config.dynamic_rules.max_population {
+                    failure_reason = Some("max_population_reached");
+                    trace!(
+                        organism_id = ?id,
+                        population = self.organisms.len(),
+                        max_population = self.config.dynamic_rules.max_population,
+                        tick = self.tick,
+                        "Reproduction failed: max population reached"
+                    );
+                }
+
+                if let Some(reason) = failure_reason {
+                    // Log failed attempt
+                    event!(
+                        Level::DEBUG,
+                        counter_name = "reproduction_failures",
+                        counter_value = 1,
+                        failure_reason = reason,
+                        organism_id = ?id,
+                        tick = self.tick,
+                        "Reproduction attempt failed"
+                    );
                     return Ok(());
                 }
 
-                if self.organisms.len() >= self.config.dynamic_rules.max_population {
-                    return Ok(());
-                }
+                // Get current population before any mutations
+                let current_population = self.organisms.len();
 
                 // Create offspring
                 if let Some(parent) = self.organisms.get_mut(&id) {
+                    let parent_energy_before = parent.energy;
+                    let parent_age = parent.age;
+                    let parent_birth_tick = parent.birth_tick;
+                    let parent_offspring_count = parent.metrics.offspring_count;
+
                     parent.consume_energy(self.config.energy_config.reproduce_cost);
                     parent.record_offspring();
 
@@ -311,23 +582,119 @@ impl Simulation {
                         (grid.neighbors(parent_position, 1), grid.width, grid.height)
                     };
 
+                    let mut offspring_spawned = false;
                     for (neighbor_pos, tile) in neighbors {
                         let wrapped = neighbor_pos.wrap(width, height);
                         if tile.tile_type != TileType::Obstacle
                             && !self.organism_positions.contains_key(&wrapped)
                         {
+                            // Base offspring energy
+                            let base_offspring_energy = self.config.energy_config.initial_energy / 2;
+
+                            // MASSIVE BUFF: If parent was born after tick 1 and is successfully reproducing,
+                            // give offspring a huge energy bonus
+                            let buff_multiplier = if parent_birth_tick > 1 {
+                                5.0 // 5x energy bonus for offspring of successful reproducers!
+                            } else {
+                                1.0
+                            };
+
+                            let offspring_energy = (base_offspring_energy as f32 * buff_multiplier) as i32;
+
                             // Spawn offspring
-                            let offspring = Organism::new(
+                            let offspring = Organism::new_with_birth_tick(
                                 parent_lineage,
                                 wrapped,
-                                self.config.energy_config.initial_energy / 2,
-                                offspring_genome,
+                                offspring_energy,
+                                offspring_genome.clone(),
+                                self.tick,
                             );
                             let offspring_id = offspring.id;
+
+                            // Get parent energy after reproduction
+                            let parent_energy_after = parent.energy;
+
+                            // Also give the PARENT a massive energy buff as a reward!
+                            let parent_final_energy = if parent_birth_tick > 1 {
+                                let parent_buff = 1000; // 1000 energy bonus for successful reproduction!
+                                parent.add_energy(parent_buff);
+                                let final_energy = parent.energy;
+
+                                info!(
+                                    event = "parent_reproduction_buff",
+                                    parent_id = ?id,
+                                    buff_amount = parent_buff,
+                                    new_parent_energy = final_energy,
+                                    tick = self.tick,
+                                    "🌟 Parent received massive energy buff for successful reproduction!"
+                                );
+                                final_energy
+                            } else {
+                                parent.energy
+                            };
+
+                            // COMPREHENSIVE LOGGING for successful reproduction
+                            info!(
+                                event = "reproduction_success",
+                                parent_id = ?id,
+                                offspring_id = ?offspring_id,
+                                lineage_id = ?parent_lineage,
+                                tick = self.tick,
+                                parent_age = parent_age,
+                                parent_birth_tick = parent_birth_tick,
+                                parent_energy_before = parent_energy_before,
+                                parent_energy_after = parent_energy_after,
+                                parent_final_energy = parent_final_energy,
+                                parent_offspring_count = parent_offspring_count + 1,
+                                offspring_energy = offspring_energy,
+                                buff_applied = parent_birth_tick > 1,
+                                buff_multiplier = buff_multiplier,
+                                parent_position_x = parent_position.x,
+                                parent_position_y = parent_position.y,
+                                offspring_position_x = wrapped.x,
+                                offspring_position_y = wrapped.y,
+                                population = current_population + 1,
+                                "🎉 Organism successfully reproduced!"
+                            );
+
                             self.organism_positions.insert(wrapped, offspring_id);
                             self.organisms.insert(offspring_id, offspring);
+                            self.reproduction_successes += 1;
+                            self.total_offspring_born += 1;
+                            offspring_spawned = true;
+
+                            // Record metrics
+                            event!(
+                                Level::INFO,
+                                counter_name = "reproductions_successful",
+                                counter_value = 1,
+                                parent_birth_tick = parent_birth_tick,
+                                buff_applied = parent_birth_tick > 1,
+                                "Reproduction success metric"
+                            );
+
                             break;
                         }
+                    }
+
+                    if !offspring_spawned {
+                        trace!(
+                            organism_id = ?id,
+                            tick = self.tick,
+                            position_x = parent_position.x,
+                            position_y = parent_position.y,
+                            "Reproduction failed: no empty adjacent cell found"
+                        );
+
+                        event!(
+                            Level::DEBUG,
+                            counter_name = "reproduction_failures",
+                            counter_value = 1,
+                            failure_reason = "no_empty_adjacent_cell",
+                            organism_id = ?id,
+                            tick = self.tick,
+                            "Reproduction attempt failed"
+                        );
                     }
                 }
             }
@@ -371,7 +738,52 @@ impl Simulation {
         for id in dead {
             if let Some(organism) = self.organisms.remove(&id) {
                 self.organism_positions.remove(&organism.position);
-                debug!("Organism {:?} died at age {}", id, organism.age);
+
+                // Log death with comprehensive details
+                let was_born_after_tick_1 = organism.birth_tick > 1;
+                let lifetime = self.tick - organism.birth_tick;
+
+                if was_born_after_tick_1 {
+                    // Extra detailed logging for organisms born after tick 1
+                    info!(
+                        event = "organism_death",
+                        organism_id = ?id,
+                        lineage_id = ?organism.lineage_id,
+                        tick = self.tick,
+                        birth_tick = organism.birth_tick,
+                        lifetime = lifetime,
+                        age = organism.age,
+                        final_energy = organism.energy,
+                        offspring_count = organism.metrics.offspring_count,
+                        kills = organism.metrics.kills,
+                        tiles_explored = organism.metrics.tiles_explored,
+                        times_eaten = organism.metrics.times_eaten,
+                        damage_dealt = organism.metrics.damage_dealt,
+                        damage_received = organism.metrics.damage_received,
+                        born_after_tick_1 = true,
+                        "💀 Organism born after tick 1 died"
+                    );
+                } else {
+                    debug!(
+                        event = "organism_death",
+                        organism_id = ?id,
+                        tick = self.tick,
+                        birth_tick = organism.birth_tick,
+                        age = organism.age,
+                        offspring_count = organism.metrics.offspring_count,
+                        "Organism died"
+                    );
+                }
+
+                // Track death metrics
+                event!(
+                    Level::INFO,
+                    counter_name = "organism_deaths",
+                    counter_value = 1,
+                    born_after_tick_1 = was_born_after_tick_1,
+                    had_offspring = organism.metrics.offspring_count > 0,
+                    "Organism death metric"
+                );
             }
         }
     }
@@ -395,11 +807,12 @@ impl Simulation {
                 };
 
                 if tile_type != TileType::Obstacle {
-                    let organism = Organism::new(
+                    let organism = Organism::new_with_birth_tick(
                         lineage_id,
                         pos,
                         self.config.energy_config.initial_energy,
                         genome,
+                        self.tick,
                     );
                     let id = organism.id;
                     self.organism_positions.insert(pos, id);
