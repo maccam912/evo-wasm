@@ -138,11 +138,25 @@ impl Mutator {
     fn mutate_opcode(&self, opcode: Opcode, rng: &mut ChaCha8Rng) -> Opcode {
         // Mutate to a similar opcode
         match opcode {
-            // Arithmetic ops
+            // Binary arithmetic ops
             Opcode::Add | Opcode::Sub | Opcode::Mul | Opcode::Div | Opcode::Mod => {
                 *[Opcode::Add, Opcode::Sub, Opcode::Mul, Opcode::Div, Opcode::Mod]
                     .iter()
                     .nth(rng.gen_range(0..5))
+                    .unwrap()
+            }
+            // Unary math ops
+            Opcode::Neg | Opcode::Abs => {
+                *[Opcode::Neg, Opcode::Abs]
+                    .iter()
+                    .nth(rng.gen_range(0..2))
+                    .unwrap()
+            }
+            // Min/Max ops
+            Opcode::Min | Opcode::Max => {
+                *[Opcode::Min, Opcode::Max]
+                    .iter()
+                    .nth(rng.gen_range(0..2))
                     .unwrap()
             }
             // Comparison ops
@@ -159,14 +173,25 @@ impl Mutator {
                 .nth(rng.gen_range(0..6))
                 .unwrap()
             }
-            // Logical ops
-            Opcode::And | Opcode::Or | Opcode::Not | Opcode::Xor => {
-                *[Opcode::And, Opcode::Or, Opcode::Not, Opcode::Xor]
+            // Binary logical ops (2 operands)
+            Opcode::And | Opcode::Or | Opcode::Xor => {
+                *[Opcode::And, Opcode::Or, Opcode::Xor]
                     .iter()
-                    .nth(rng.gen_range(0..4))
+                    .nth(rng.gen_range(0..3))
                     .unwrap()
             }
-            // Leave others unchanged
+            // Note: Not is unary (1 operand) so it doesn't mutate with binary logical ops
+            // Note: SenseEnv (2 operands) and SenseNeighbor (1 operand) have different arities,
+            // so they are left unchanged to avoid creating invalid instructions
+            // Energy reading ops
+            Opcode::GetEnergy | Opcode::GetAge => {
+                *[Opcode::GetEnergy, Opcode::GetAge]
+                    .iter()
+                    .nth(rng.gen_range(0..2))
+                    .unwrap()
+            }
+            // Leave action opcodes (Move, Eat, Attack, Reproduce, EmitSignal) unchanged
+            // to preserve their specific behaviors
             _ => opcode,
         }
     }
@@ -204,30 +229,92 @@ impl Mutator {
 
     fn generate_random_instruction(&self, rng: &mut ChaCha8Rng) -> Instruction {
         let opcodes = [
+            // Arithmetic
             Opcode::Add,
             Opcode::Sub,
             Opcode::Mul,
+            Opcode::Div,
+            Opcode::Mod,
+            Opcode::Neg,
+            Opcode::Abs,
+            Opcode::Min,
+            Opcode::Max,
+            // Comparison
+            Opcode::Eq,
+            Opcode::Ne,
+            Opcode::Lt,
+            Opcode::Le,
+            Opcode::Gt,
+            Opcode::Ge,
+            // Logical
+            Opcode::And,
+            Opcode::Or,
+            Opcode::Xor,
+            Opcode::Not,
+            // Constants
             Opcode::LoadConst,
+            // Host calls
             Opcode::GetEnergy,
+            Opcode::GetAge,
             Opcode::Move,
             Opcode::Eat,
+            Opcode::SenseEnv,
+            Opcode::SenseNeighbor,
+            Opcode::Attack,
+            Opcode::Reproduce,
+            Opcode::EmitSignal,
         ];
 
         let opcode = *opcodes.iter().nth(rng.gen_range(0..opcodes.len())).unwrap();
 
         match opcode {
-            Opcode::Add | Opcode::Sub | Opcode::Mul => Instruction::arithmetic(
+            // Binary arithmetic/comparison/logical operations
+            Opcode::Add | Opcode::Sub | Opcode::Mul | Opcode::Div | Opcode::Mod
+            | Opcode::Eq | Opcode::Ne | Opcode::Lt | Opcode::Le | Opcode::Gt | Opcode::Ge
+            | Opcode::And | Opcode::Or | Opcode::Xor
+            | Opcode::Min | Opcode::Max => Instruction::arithmetic(
                 opcode,
                 Register(rng.gen_range(0..8)),
                 Register(rng.gen_range(0..8)),
                 Register(rng.gen_range(0..8)),
             ),
+            // Unary operations
+            Opcode::Not | Opcode::Neg | Opcode::Abs => Instruction::new(opcode)
+                .with_operand(Operand::Register(Register(rng.gen_range(0..8))))
+                .with_dest(Register(rng.gen_range(0..8))),
+            // Load constant
             Opcode::LoadConst => Instruction::load_const(
                 Register(rng.gen_range(0..8)),
                 Value::Int(rng.gen_range(-100..100)),
             ),
-            Opcode::GetEnergy => Instruction::new(Opcode::GetEnergy)
+            // No-parameter host calls
+            Opcode::GetEnergy | Opcode::GetAge | Opcode::Eat =>
+                Instruction::new(opcode).with_dest(Register(rng.gen_range(0..8))),
+            // Move: 2 direction parameters (dx, dy)
+            Opcode::Move => Instruction::new(opcode)
+                .with_operand(Operand::Immediate(Value::Int(rng.gen_range(-1..=1))))
+                .with_operand(Operand::Immediate(Value::Int(rng.gen_range(-1..=1)))),
+            // SenseEnv: 2 direction parameters (dx, dy)
+            Opcode::SenseEnv => Instruction::new(opcode)
+                .with_operand(Operand::Immediate(Value::Int(rng.gen_range(-1..=1))))
+                .with_operand(Operand::Immediate(Value::Int(rng.gen_range(-1..=1))))
                 .with_dest(Register(rng.gen_range(0..8))),
+            // SenseNeighbor: 1 direction parameter
+            Opcode::SenseNeighbor => Instruction::new(opcode)
+                .with_operand(Operand::Immediate(Value::Int(rng.gen_range(0..8))))
+                .with_dest(Register(rng.gen_range(0..8))),
+            // Attack: 2 direction parameters (dx, dy)
+            Opcode::Attack => Instruction::new(opcode)
+                .with_operand(Operand::Immediate(Value::Int(rng.gen_range(-1..=1))))
+                .with_operand(Operand::Immediate(Value::Int(rng.gen_range(-1..=1))))
+                .with_dest(Register(rng.gen_range(0..8))),
+            // Reproduce: no parameters
+            Opcode::Reproduce => Instruction::new(opcode)
+                .with_dest(Register(rng.gen_range(0..8))),
+            // EmitSignal: 2 parameters (signal type, value)
+            Opcode::EmitSignal => Instruction::new(opcode)
+                .with_operand(Operand::Immediate(Value::Int(rng.gen_range(0..10))))
+                .with_operand(Operand::Immediate(Value::Int(rng.gen_range(-100..100)))),
             _ => Instruction::new(opcode),
         }
     }
