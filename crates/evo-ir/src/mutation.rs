@@ -173,20 +173,16 @@ impl Mutator {
                 .nth(rng.gen_range(0..6))
                 .unwrap()
             }
-            // Logical ops
-            Opcode::And | Opcode::Or | Opcode::Not | Opcode::Xor => {
-                *[Opcode::And, Opcode::Or, Opcode::Not, Opcode::Xor]
+            // Binary logical ops (2 operands)
+            Opcode::And | Opcode::Or | Opcode::Xor => {
+                *[Opcode::And, Opcode::Or, Opcode::Xor]
                     .iter()
-                    .nth(rng.gen_range(0..4))
+                    .nth(rng.gen_range(0..3))
                     .unwrap()
             }
-            // Sensing ops (can mutate between different sensing operations)
-            Opcode::SenseEnv | Opcode::SenseNeighbor => {
-                *[Opcode::SenseEnv, Opcode::SenseNeighbor]
-                    .iter()
-                    .nth(rng.gen_range(0..2))
-                    .unwrap()
-            }
+            // Note: Not is unary (1 operand) so it doesn't mutate with binary logical ops
+            // Note: SenseEnv (2 operands) and SenseNeighbor (1 operand) have different arities,
+            // so they are left unchanged to avoid creating invalid instructions
             // Energy reading ops
             Opcode::GetEnergy | Opcode::GetAge => {
                 *[Opcode::GetEnergy, Opcode::GetAge]
