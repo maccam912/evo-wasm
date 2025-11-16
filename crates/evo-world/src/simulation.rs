@@ -387,7 +387,7 @@ impl Simulation {
         let (_, actions) = match instance.step(0) {
             Ok(result) => result,
             Err(e) => {
-                warn!("Organism {:?} execution failed: {}", id, e);
+                info!("Organism {:?} execution failed: {}", id, e);
                 return Ok(());
             }
         };
