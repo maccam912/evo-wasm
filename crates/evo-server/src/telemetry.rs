@@ -251,14 +251,14 @@ pub fn shutdown_telemetry() {
 #[macro_export]
 macro_rules! record_counter {
     ($name:expr, $value:expr) => {
-        tracing::info!(
+        tracing::debug!(
             counter_name = $name,
             counter_value = $value,
             "Counter metric"
         );
     };
     ($name:expr, $value:expr, $($key:expr => $val:expr),*) => {
-        tracing::info!(
+        tracing::debug!(
             counter_name = $name,
             counter_value = $value,
             $($key = $val,)*
@@ -271,14 +271,14 @@ macro_rules! record_counter {
 #[macro_export]
 macro_rules! record_gauge {
     ($name:expr, $value:expr) => {
-        tracing::info!(
+        tracing::debug!(
             gauge_name = $name,
             gauge_value = $value,
             "Gauge metric"
         );
     };
     ($name:expr, $value:expr, $($key:expr => $val:expr),*) => {
-        tracing::info!(
+        tracing::debug!(
             gauge_name = $name,
             gauge_value = $value,
             $($key = $val,)*
@@ -291,14 +291,14 @@ macro_rules! record_gauge {
 #[macro_export]
 macro_rules! record_histogram {
     ($name:expr, $value:expr) => {
-        tracing::info!(
+        tracing::debug!(
             histogram_name = $name,
             histogram_value = $value,
             "Histogram metric"
         );
     };
     ($name:expr, $value:expr, $($key:expr => $val:expr),*) => {
-        tracing::info!(
+        tracing::debug!(
             histogram_name = $name,
             histogram_value = $value,
             $($key = $val,)*
