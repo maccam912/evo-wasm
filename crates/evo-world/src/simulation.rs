@@ -180,7 +180,7 @@ impl Simulation {
                 );
             }
         } else {
-            warn!(
+            info!(
                 event = "no_successful_organisms",
                 total_survivors = total_survivors,
                 "⚠️ No organisms born after tick 1 survived to the end"
@@ -387,7 +387,7 @@ impl Simulation {
         let (_, actions) = match instance.step(0) {
             Ok(result) => result,
             Err(e) => {
-                warn!("Organism {:?} execution failed: {}", id, e);
+                info!("Organism {:?} execution failed: {}", id, e);
                 return Ok(());
             }
         };
