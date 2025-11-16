@@ -190,8 +190,8 @@ pub fn init_telemetry(otel_endpoint: Option<&str>) -> Result<()> {
         // Environment filter for log levels
         let env_filter = EnvFilter::try_from_default_env()
             .unwrap_or_else(|_| {
-                // Default: info level, debug for our crates
-                "info,evo_server=debug,evo_world=debug,evo_worker=debug".into()
+                // Default: warn level only
+                "warn".into()
             });
 
         // Stdout formatter for local debugging (JSON format with trace context)
@@ -230,7 +230,7 @@ pub fn init_telemetry(otel_endpoint: Option<&str>) -> Result<()> {
         tracing_subscriber::registry()
             .with(
                 EnvFilter::try_from_default_env()
-                    .unwrap_or_else(|_| "info,evo_server=debug,evo_world=debug".into()),
+                    .unwrap_or_else(|_| "warn".into()),
             )
             .with(fmt_layer)
             .with(telemetry_layer)
