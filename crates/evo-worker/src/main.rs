@@ -8,7 +8,7 @@ use evo_core::WorkerConfig;
 use std::sync::Arc;
 use tokio::signal;
 use tokio::time::{interval, Duration};
-use tracing::{error, info, instrument};
+use tracing::{debug, error, info, instrument};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -30,7 +30,7 @@ async fn main() -> Result<()> {
     for i in 0..config.max_concurrent_jobs {
         let client = client.clone();
         let handle = tokio::spawn(async move {
-            info!("Worker task {} started", i);
+            debug!("Worker task {} started", i);
             if let Err(e) = run_worker_loop(client, i).await {
                 error!("Worker task {} failed: {}", i, e);
             }
@@ -72,7 +72,7 @@ async fn run_worker_loop(client: Arc<client::WorkerClient>, task_id: usize) -> R
 
         match client.request_and_execute_job(task_id).await {
             Ok(Some(())) => {
-                info!("Task {} completed a job", task_id);
+                debug!("Task {} completed a job", task_id);
             }
             Ok(None) => {
                 // No job available, continue polling
