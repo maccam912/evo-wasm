@@ -180,7 +180,7 @@ impl Simulation {
                 );
             }
         } else {
-            warn!(
+            info!(
                 event = "no_successful_organisms",
                 total_survivors = total_survivors,
                 "⚠️ No organisms born after tick 1 survived to the end"
