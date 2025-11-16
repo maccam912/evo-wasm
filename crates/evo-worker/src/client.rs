@@ -6,7 +6,7 @@ use evo_world::{IslandJob, IslandResult};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
-use tracing::{debug, info, instrument, warn};
+use tracing::{debug, info, instrument, trace, warn};
 use opentelemetry::global;
 use std::collections::HashMap;
 
@@ -62,7 +62,7 @@ impl WorkerClient {
     pub async fn request_job(&self) -> Result<Option<IslandJob>> {
         let url = format!("{}/api/jobs/request", self.config.server_url);
 
-        debug!("Requesting job from {}", url);
+        trace!("Requesting job from {}", url);
 
         // Inject trace context
         let trace_headers = self.inject_trace_context();
@@ -82,11 +82,11 @@ impl WorkerClient {
 
         if response.status().is_success() {
             let job: IslandJob = response.json().await?;
-            info!("Received job: {:?}", job.job_id);
+            debug!("Received job: {:?}", job.job_id);
             Ok(Some(job))
         } else if response.status() == reqwest::StatusCode::NOT_FOUND {
             // No jobs available
-            debug!("No jobs available");
+            trace!("No jobs available");
             Ok(None)
         } else {
             let status = response.status();
@@ -101,7 +101,7 @@ impl WorkerClient {
     pub async fn submit_result(&self, result: IslandResult) -> Result<()> {
         let url = format!("{}/api/jobs/submit", self.config.server_url);
 
-        debug!("Submitting result for job: {:?}", result.job_id);
+        trace!("Submitting result for job: {:?}", result.job_id);
 
         // Inject trace context
         let trace_headers = self.inject_trace_context();
@@ -118,7 +118,7 @@ impl WorkerClient {
         let response = request.send().await?;
 
         if response.status().is_success() {
-            info!("Result submitted successfully for job: {:?}", result.job_id);
+            debug!("Result submitted successfully for job: {:?}", result.job_id);
             Ok(())
         } else {
             let status = response.status();
@@ -134,7 +134,7 @@ impl WorkerClient {
     /// Execute a job
     #[instrument(skip(self, job))]
     pub async fn execute_job(&self, job: IslandJob) -> Result<IslandResult> {
-        info!("Executing job: {:?}", job.job_id);
+        debug!("Executing job: {:?}", job.job_id);
 
         let start = Instant::now();
 
@@ -144,7 +144,7 @@ impl WorkerClient {
 
         let duration = start.elapsed();
 
-        info!(
+        debug!(
             "Job {:?} completed in {:.2}s",
             result.job_id,
             duration.as_secs_f64()
@@ -183,7 +183,7 @@ impl WorkerClient {
     pub async fn get_config(&self) -> Result<evo_core::JobConfig> {
         let url = format!("{}/api/config", self.config.server_url);
 
-        debug!("Fetching config from {}", url);
+        trace!("Fetching config from {}", url);
 
         // Inject trace context
         let trace_headers = self.inject_trace_context();
@@ -213,14 +213,14 @@ impl WorkerClient {
 #[macro_export]
 macro_rules! record_counter {
     ($name:expr, $value:expr) => {
-        tracing::info!(
+        tracing::debug!(
             counter_name = $name,
             counter_value = $value,
             "Counter metric"
         );
     };
     ($name:expr, $value:expr, $($key:expr => $val:expr),*) => {
-        tracing::info!(
+        tracing::debug!(
             counter_name = $name,
             counter_value = $value,
             $($key = $val,)*
@@ -232,14 +232,14 @@ macro_rules! record_counter {
 #[macro_export]
 macro_rules! record_histogram {
     ($name:expr, $value:expr) => {
-        tracing::info!(
+        tracing::debug!(
             histogram_name = $name,
             histogram_value = $value,
             "Histogram metric"
         );
     };
     ($name:expr, $value:expr, $($key:expr => $val:expr),*) => {
-        tracing::info!(
+        tracing::debug!(
             histogram_name = $name,
             histogram_value = $value,
             $($key = $val,)*
